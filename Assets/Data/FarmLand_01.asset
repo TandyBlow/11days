@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: add7d11474ef3e240861a722ee82429f, type: 3}
+  m_Name: FarmLand_01
+  m_EditorClassIdentifier: 
+  buildingName: "\u519C\u7530"
+  prefab: {fileID: 5405000633904985289, guid: 038db4ad012416a4fb80ad0cad6d44d4, type: 3}
+  cost: 25
+  width: 4
+  height: 4
+  buildingType: 1
+  rewards: 10
+  rewardsTime: 35
+  population: 0
+  goodsNeeded: 0
+  unlockDay: 1
+  isTrueVersion: 0
+  isSpecialReplacement: 0

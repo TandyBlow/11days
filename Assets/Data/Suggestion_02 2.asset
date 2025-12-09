@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4e22cc7eaabc2b1469dbbaac9e59f7ee, type: 3}
+  m_Name: Suggestion_02 2
+  m_EditorClassIdentifier: 
+  isMisleading: 0
+  suggestionText: "\u6BCF\u4E00\u65E5\u7684\u5F00\u59CB\u90FD\u4F1A\u88AB\u8BB0\u5F55\u4E0B\u6765\uFF0C\u76F4\u5230\u4E0B\u4E00\u65E5\u7684\u5230\u6765\u3002"
+  minDayToShow: 1
+  trigger: 0
+  triggerValue: 0
+  cooldown: 120

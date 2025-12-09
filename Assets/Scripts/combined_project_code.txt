@@ -1,0 +1,4293 @@
+--- Start of .\BuildableArea.cs ---
+
+// BuildableArea.cs
+using UnityEngine;
+using System.Collections.Generic;
+// 存储边界点，提供查询方法
+public class BuildableArea : MonoBehaviour
+{
+    public List<Vector3> points = new List<Vector3>();
+    public bool IsWorldPointInside(Vector3 worldPoint)
+    {
+        // 将世界坐标点转换为 MyBuildableArea 对象的本地坐标
+        // 目前存储的点为本地坐标
+        Vector2 point = transform.InverseTransformPoint(worldPoint);
+
+        int intersections = 0;
+        for (int i = 0; i < points.Count; i++)
+        {
+            // 获取多边形的一条边
+            Vector2 p1 = points[i];
+            Vector2 p2 = points[(i + 1) % points.Count]; // % 用于处理最后一个点与第一个点的连线
+
+            // 检查边是否与从point发出的水平射线相交
+            if (p1.y > point.y != p2.y > point.y) // 边是否跨越了测试点的水平线
+            {
+                // 计算射线与边的交点的x坐标
+                float intersectionX = (p2.x - p1.x) * (point.y - p1.y) / (p2.y - p1.y) + p1.x;
+                if (point.x < intersectionX) intersections++; // 交点是否在测试点的右侧
+            }
+        }
+        // 如果交点数为奇数，则点在内部
+        return (intersections % 2) == 1;
+    }
+}
+
+
+--- End of .\BuildableArea.cs ---
+
+--- Start of .\BuildingButton.cs ---
+
+using UnityEngine;
+using UnityEngine.UI;
+
+[RequireComponent(typeof(Button))]
+public class BuildingButton : MonoBehaviour
+{
+    [SerializeField]
+    private BuildingData buildingData;
+
+    private Button button;
+
+    private void Awake()
+    {
+        button = GetComponent<Button>();
+        button.onClick.AddListener(OnButtonClick);
+    }
+
+    private void OnButtonClick()
+    {
+        Debug.Log("按到了");
+        if (buildingData != null)
+        {
+            GameManager.Instance.RequestEnterBuildMode(buildingData);
+        }
+        else
+        {
+            Debug.LogError("此建筑按钮没有分配BuildingData！");
+        }
+    }
+}
+
+--- End of .\BuildingButton.cs ---
+
+--- Start of .\BuildingData.cs ---
+
+using UnityEngine;
+
+public enum BuildingType{Residential, Farmland, Commercial, Decoration, Road}
+
+[CreateAssetMenu(fileName = "NewBuildingData", menuName = "Game/Building Data")]
+public class BuildingData : ScriptableObject
+{
+    public string buildingName;
+    public GameObject prefab;
+    // public Sprite icon;
+    public int cost;
+    public int width = 2; // 默认值
+    public int height = 2; // 默认值
+    public BuildingType buildingType;
+    public int rewards;
+    public float rewardsTime;
+    public int population;
+    public int goodsNeeded;
+    public int unlockDay = 1;
+    public bool isTrueVersion = false;
+    public bool isSpecialReplacement = false;
+    
+}
+
+--- End of .\BuildingData.cs ---
+
+--- Start of .\BuildingDatabase.cs ---
+
+// --- Start of .\BuildingDatabase.cs ---
+
+using UnityEngine;
+using System.Collections.Generic;
+using System.Linq;
+
+[CreateAssetMenu(fileName = "BuildingDatabase", menuName = "Game/Building Database")]
+public class BuildingDatabase : ScriptableObject
+{
+    public List<BuildingData> allBuildings = new List<BuildingData>();
+
+    // 提供一个按类型筛选建筑的辅助方法
+    public List<BuildingData> GetBuildingsByType(BuildingType type)
+    {
+        return allBuildings.Where(b => b.buildingType == type).ToList();
+    }
+}
+
+// --- End of .\BuildingDatabase.cs ---
+
+
+--- End of .\BuildingDatabase.cs ---
+
+--- Start of .\BuildingInstance.cs ---
+
+// BuildingInstance.cs
+using UnityEngine;
+using System.Linq;
+
+public class BuildingInstance : MonoBehaviour
+{
+    // 定义建筑状态
+    public enum BuildingState { plantsRequired, goodsRequired, rewardsRequired, waiting }
+
+    [Header("组件引用")]
+    [SerializeField]
+    private GameObject interactionBubble; // 在Prefab中将小泡泡对象拖到这里
+    private SpriteRenderer buildingRenderer;
+    private SpriteRenderer bubbleRenderer;
+    private IsometricSorter buildingSorter;
+
+    [Header("泡泡图标")]
+    [Tooltip("需要补货时显示的图标")]
+    [SerializeField] private Sprite goodsBubbleSprite;
+    [Tooltip("可以收获时显示的图标")]
+    [SerializeField] private Sprite cashBubbleSprite;
+
+    [Header("农田贴图")]
+    [Tooltip("可种植状态的贴图")]
+    [SerializeField] private Sprite plantableSprite;
+    [Tooltip("生长中状态的贴图")]
+    [SerializeField] private Sprite growingSprite;
+    [Tooltip("可收获状态的贴图")]
+    [SerializeField] private Sprite harvestableSprite;
+
+    // 内部状态变量
+    private BuildingData buildingData;
+    private BuildingState currentState;
+    private float timer;
+    private int stockCounter; // 仅用于商业建筑
+
+    // 道路连接状态
+    private bool isConnectedToRoad = false;
+
+    public void Initialize(BuildingData data)
+    {
+        this.buildingData = data;
+        
+        buildingRenderer = GetComponent<SpriteRenderer>();
+        buildingSorter = GetComponent<IsometricSorter>();
+        if (interactionBubble != null)
+        {
+            bubbleRenderer = interactionBubble.GetComponent<SpriteRenderer>();
+            if (buildingRenderer != null && bubbleRenderer != null)
+            {
+                // 确保它们在同一个Sorting Layer
+                bubbleRenderer.sortingLayerID = buildingRenderer.sortingLayerID;
+                // 将泡泡的Order设置得比建筑高一点
+                bubbleRenderer.sortingOrder = buildingRenderer.sortingOrder + 1;
+            }
+        
+        }
+        else
+        {
+             if(data.buildingType == BuildingType.Commercial || data.buildingType == BuildingType.Residential)
+             {
+                 Debug.LogError($"建筑 {data.buildingName} 没有分配交互气泡！");
+             }
+        }
+        
+        if (buildingRenderer == null)
+        {
+             Debug.LogError($"建筑 {data.buildingName} 的Prefab上没有找到SpriteRenderer！");
+        }
+
+        if (buildingData.buildingType == BuildingType.Residential || buildingData.buildingType == BuildingType.Commercial)
+        {
+            SetRoadConnection(false); 
+        }
+        else
+        {
+            SetRoadConnection(true);
+        }
+
+        switch (buildingData.buildingType)
+        {
+            case BuildingType.Residential:
+                GameManager.Instance.AddPopulation(buildingData.population);
+                ChangeState(BuildingState.waiting);
+                break;
+            case BuildingType.Farmland:
+                ChangeState(BuildingState.plantsRequired);
+                break;
+            case BuildingType.Commercial:
+                ChangeState(BuildingState.goodsRequired);
+                break;
+            case BuildingType.Road:
+            case BuildingType.Decoration:
+                ChangeState(BuildingState.waiting);
+                if (interactionBubble != null)
+                {
+                    interactionBubble.SetActive(false);
+                }
+                break;
+        }
+    }
+
+    private void Update()
+    {
+        // 农田的生长逻辑独立处理
+        if (buildingData.buildingType == BuildingType.Farmland)
+        {
+            if (currentState == BuildingState.waiting) // "waiting" 状态对农田来说就是 "生长中"
+            {
+                timer -= Time.deltaTime;
+                if (timer <= 0)
+                {
+                    ChangeState(BuildingState.rewardsRequired); // 生长完成，进入可收获状态
+                }
+            }
+            return; // 农田不执行后续的商业逻辑
+        }
+
+        // 其他建筑（住宅、商业）的逻辑
+        if (!isConnectedToRoad || currentState != BuildingState.waiting) return;
+
+        timer -= Time.deltaTime;
+
+        if (timer <= 0)
+        {
+            switch (buildingData.buildingType)
+            {
+                case BuildingType.Residential:
+                    ChangeState(BuildingState.rewardsRequired);
+                    break;
+                case BuildingType.Commercial:
+                    HandleCommercialSale();
+                    break;
+            }
+        }
+    }
+
+    private void LateUpdate()
+    {
+        // 只要泡泡是激活的，就每帧强制更新它的 sortingOrder
+        if (interactionBubble != null && interactionBubble.activeSelf && bubbleRenderer != null && buildingSorter != null)
+        {
+            // 核心逻辑：直接读取建筑的sortingOrder，然后+1
+            // 这就绕过了所有复杂的计算，直接拿结果
+            bubbleRenderer.sortingOrder = buildingSorter.GetComponent<Renderer>().sortingOrder + 1;
+        }
+    }
+
+
+    private void HandleCommercialSale()
+    {
+        timer = 1f;
+        float sellChance = GameManager.Instance.population / 30.0f;
+
+        if (Random.value < sellChance)
+        {
+            stockCounter--;
+            Debug.Log($"{buildingData.buildingName} 卖出了一件商品, 剩余 {stockCounter}");
+
+            if (stockCounter <= 0)
+            {
+                ChangeState(BuildingState.rewardsRequired);
+            }
+        }
+    }
+
+    private void ChangeState(BuildingState newState)
+    {
+        currentState = newState;
+        Debug.Log($"{buildingData.buildingName} 进入状态: {newState}");
+
+        // --- 农田的特殊状态处理：更换贴图 ---
+        if (buildingData.buildingType == BuildingType.Farmland)
+        {
+            if (interactionBubble != null) interactionBubble.SetActive(false); // 确保农田绝不显示泡泡
+
+            switch (newState)
+            {
+                case BuildingState.plantsRequired: // 可种植
+                    if(buildingRenderer != null) buildingRenderer.sprite = plantableSprite;
+                    break;
+                case BuildingState.waiting: // 生长中
+                    if(buildingRenderer != null) buildingRenderer.sprite = growingSprite;
+                    timer = buildingData.rewardsTime; // 开始生长计时
+                    break;
+                case BuildingState.rewardsRequired: // 可收获
+                    if(buildingRenderer != null) buildingRenderer.sprite = harvestableSprite;
+                    break;
+            }
+            return; // 农田的状态视觉逻辑到此为止
+        }
+
+        // --- 其他建筑的泡泡逻辑 ---
+        bool shouldShowBubble = (newState == BuildingState.goodsRequired || newState == BuildingState.rewardsRequired) 
+                                && isConnectedToRoad; 
+                                
+        if(interactionBubble != null)
+        {
+            interactionBubble.SetActive(shouldShowBubble);
+
+            if (shouldShowBubble && bubbleRenderer != null)
+            {
+                switch (newState)
+                {
+                    case BuildingState.goodsRequired:
+                        bubbleRenderer.sprite = goodsBubbleSprite;
+                        break;
+                    case BuildingState.rewardsRequired:
+                        bubbleRenderer.sprite = cashBubbleSprite; // 农田已排除，这里只会是现金
+                        break;
+                }
+            }
+        }
+
+        // 进入新状态时的初始化操作 (农田的计时器已在上面处理)
+        if (newState == BuildingState.waiting)
+        {
+            switch (buildingData.buildingType)
+            {
+                case BuildingType.Residential:
+                    timer = buildingData.rewardsTime;
+                    break;
+                case BuildingType.Commercial:
+                    stockCounter = buildingData.goodsNeeded;
+                    timer = 1f; // 启动1秒售卖计时器
+                    break;
+            }
+        }
+    }
+
+    public void HandleInteraction()
+    {
+        if (!isConnectedToRoad)
+        {
+            Debug.Log($"{buildingData.buildingName} 未连接道路，无法操作！");
+            return;
+        }
+
+        Debug.Log("我要处理了！");
+        switch (currentState)
+        {
+            case BuildingState.waiting:
+                return;
+
+            case BuildingState.plantsRequired:
+                // 点击农田进行种植
+                ChangeState(BuildingState.waiting);
+                break;
+
+            case BuildingState.goodsRequired:
+                if (GameManager.Instance.goods >= buildingData.goodsNeeded)
+                {
+                    GameManager.Instance.AddGoods(-buildingData.goodsNeeded);
+                    ChangeState(BuildingState.waiting);
+                }
+                else
+                {
+                    Debug.Log("没货你补个屁");
+                }
+                break;
+
+            case BuildingState.rewardsRequired:
+                if (buildingData.buildingType == BuildingType.Farmland)
+                {
+                    GameManager.Instance.AddGoods(buildingData.rewards);
+                    ChangeState(BuildingState.plantsRequired); // 收获后变为可种植状态
+                }
+                else // 住宅和商业
+                {
+                    GameManager.Instance.AddMoney(buildingData.rewards);
+                    if (buildingData.buildingType == BuildingType.Residential)
+                    {
+                        ChangeState(BuildingState.waiting);
+                    }
+                    else // 商业
+                    {
+                        ChangeState(BuildingState.goodsRequired);
+                    }
+                }
+                break;
+        }
+    }
+    
+    public void UpdateRoadConnectionStatus()
+    {
+        if (buildingData.buildingType != BuildingType.Residential && buildingData.buildingType != BuildingType.Commercial)
+        {
+            if (!isConnectedToRoad) SetRoadConnection(true);
+            return;
+        }
+        
+        var grid = BuildManager.Instance.GetGrid();
+        if (grid == null) return;
+        
+        var gridObject = grid.GetGridObject(transform.position);
+        if (gridObject == null) return;
+        var placedObject = gridObject.GetPlacedObject();
+        if (placedObject == null) return;
+
+        var neighbors = grid.GetNeighborsOfArea(placedObject.GetOriginX(), placedObject.GetOriginY(), buildingData.width, buildingData.height);
+        
+        bool isNowConnected = neighbors.Any(neighbor => neighbor.GetBuildingData().buildingType == BuildingType.Road);
+        
+        if (isNowConnected != isConnectedToRoad)
+        {
+            SetRoadConnection(isNowConnected);
+        }
+    }
+
+    private void SetRoadConnection(bool connected)
+    {
+        isConnectedToRoad = connected;
+        
+        if (connected)
+        {
+            Debug.Log($"{buildingData.buildingName} 已连接到道路，激活功能。");
+            ChangeState(currentState); 
+        }
+        else
+        {
+            Debug.Log($"{buildingData.buildingName} 未连接道路，功能已禁用。");
+            if (interactionBubble != null)
+            {
+                interactionBubble.SetActive(false);
+            }
+        }
+    }
+
+    public void RestoreState(BuildingSaveData data)
+    {
+        this.timer = data.timer;
+        this.stockCounter = data.stockCounter;
+        ChangeState(data.currentState);
+    }
+
+    public BuildingSaveData GetSaveData(int gridX, int gridY)
+    {
+        if (buildingData == null) return null;
+        return new BuildingSaveData
+        {
+            buildingName = buildingData.name,
+            gridX = gridX,
+            gridY = gridY,
+            currentState = this.currentState,
+            timer = this.timer,
+            stockCounter = this.stockCounter
+        };
+    }
+    
+    public BuildingData GetBuildingData()
+    {
+        return this.buildingData;
+    }
+}
+
+
+--- End of .\BuildingInstance.cs ---
+
+--- Start of .\BuildingListItemUI.cs ---
+
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+
+public class BuildingListItemUI : MonoBehaviour
+{
+    [Header("UI组件")]
+    [SerializeField] private Image iconImage; // 这个Image就是用来显示建筑图片的UI元素
+    [SerializeField] private TextMeshProUGUI nameText;
+    [SerializeField] private TextMeshProUGUI costText;
+    [SerializeField] private Button button;
+
+    private BuildingData buildingData;
+
+    private void Awake()
+    {
+        button = GetComponent<Button>();
+        button.onClick.AddListener(OnItemClicked);
+    }
+
+    // 由BuildMenuUI调用，用于设置此列表项显示的数据
+    public void Setup(BuildingData data)
+    {
+        this.buildingData = data;
+
+        // 1. 从建筑Prefab上获取SpriteRenderer组件
+        if (data.prefab != null && data.prefab.TryGetComponent<SpriteRenderer>(out var spriteRenderer))
+        {
+            // 2. 将获取到的Sprite直接赋值给UI的Image组件
+            iconImage.sprite = spriteRenderer.sprite;
+        }
+        else
+        {
+            Debug.LogWarning($"建筑 '{data.buildingName}' 的Prefab上没有找到SpriteRenderer，无法显示图标。");
+        }
+        // --- 核心改动结束 ---
+
+        nameText.text = data.buildingName;
+        costText.text = data.cost.ToString();
+
+        // 根据玩家金钱判断按钮是否可交互
+        bool canAfford = GameManager.Instance.money >= data.cost;
+        button.interactable = canAfford;
+    }
+
+    private void OnItemClicked()
+    {
+        if (buildingData != null)
+        {
+            GameManager.Instance.RequestEnterBuildMode(buildingData);
+        }
+    }
+}
+
+
+--- End of .\BuildingListItemUI.cs ---
+
+--- Start of .\BuildManager.cs ---
+
+// BuildManager.cs
+using UnityEngine;
+using UnityEngine.EventSystems;
+using System.Collections.Generic;
+using System.Linq;
+using System.Collections;
+
+public class BuildManager : MonoBehaviour
+{
+    public static BuildManager Instance { get; private set; }
+
+    [Header("网格设置")]
+    [SerializeField] public int gridWidth = 45;
+    [SerializeField] public int gridHeight = 25;
+    [SerializeField] public float cellSize = 1f;
+    [SerializeField] public Vector3 gridOrigin;
+
+    [Header("可建造区域")]
+    [Tooltip("挂载了BuildableArea脚本的对象，用于定义可建造区域")]
+    [SerializeField] private BuildableArea buildableArea;
+
+    [Header("视觉表现")]
+    [SerializeField] private Transform gridVisualParent;
+    [SerializeField] private GameObject gridCellVisualPrefab;
+
+    [Header("数据")]
+    public BuildingDatabase buildingDatabase;
+    [SerializeField] public Transform buildingParent;
+
+    [SerializeField] private BuildingData fountainBuildingData;
+    public LayerMask groundLayer;
+    private GridSystem grid; 
+    private bool isInBuildMode = false;
+    private BuildingData selectedBuilding;
+
+    private GameObject previewObject; // 用于存放半透明的预览建筑
+    private Vector2Int previewPosition; // 预览建筑所在的网格坐标
+    private SpriteRenderer previewRenderer; // 预览建筑的SpriteRenderer，方便修改颜色
+
+    private GameObject[,] gridVisualArray;
+    private List<Vector2Int> highlightedCells;
+    private Color defaultGridColor = new Color(1, 1, 1, 0.2f);
+    private BuildingInstance fountainInstance;
+
+    private void Awake()
+    {
+        if (Instance != null)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+        buildingDatabase = Resources.Load<BuildingDatabase>("BuildingDatabase"); // <-- USE YOUR FILENAME
+        if (buildingDatabase == null)
+        {
+            Debug.LogError("!!!!!!!!!! BUILD MANAGER FIX FAILED: Cannot load BuildingDatabase from Resources! Check name/location! !!!!!!!!!!");
+        }
+        InitializeGrid();
+        gridVisualArray = new GameObject[gridWidth, gridHeight];
+        highlightedCells = new List<Vector2Int>();
+        CreateGridVisuals();
+    }
+    
+    public void TrySpecialReplacement(BuildingData replacementData)
+    {
+        if (fountainInstance == null)
+        {
+            Debug.LogError($"无法执行替换：目标对象(喷泉)的引用丢失或未在加载时找到。请确保喷泉在初始布局中，并且其BuildingData已在BuildManager中指定。");
+            return;
+        }
+        if (GameManager.Instance.money < replacementData.cost)
+        {
+            Debug.Log("金钱不足，无法建造 " + replacementData.buildingName);
+            // 这里可以添加UI提示
+            return;
+        }
+        Debug.Log($"正在将喷泉替换为 {replacementData.buildingName}.");
+        GameManager.Instance.AddMoney(-replacementData.cost);
+        // 使用新的数据重新初始化现有的喷泉实例
+        fountainInstance.Initialize(replacementData);
+        // 更新网格上的对象信息
+        grid.GetXY(fountainInstance.transform.position, out int x, out int y);
+        var gridObject = grid.GetGridObject(x, y);
+        if (gridObject != null && gridObject.GetPlacedObject() != null)
+        {
+            // 创建一个新的PlacedObject并替换掉网格中的旧引用
+            var newPlacedObject = new PlacedObject(replacementData, x, y, fountainInstance);
+            grid.PlaceObjectOnArea(x, y, replacementData.width, replacementData.height, newPlacedObject);
+        }
+    }
+
+
+    private void OnEnable()
+    {
+        GameManager.OnGameStateChanged += HandleGameStateChange;
+    }
+
+    private void OnDisable()
+    {
+        GameManager.OnGameStateChanged -= HandleGameStateChange;
+    }
+
+    private void Update()
+    {
+        if (!isInBuildMode) return;
+        if (previewObject == null)
+        {
+            UpdateGhostPreview();
+        }
+        // UpdateHighlightPreview();
+    }
+    
+    // 从BuildableArea初始化网格系统
+    private void InitializeGrid()
+    {
+        bool[,] buildableMap = new bool[gridWidth, gridHeight];
+        var tempGrid = new GridSystem(gridWidth, gridHeight, cellSize, gridOrigin, transform, null);
+        Vector3 halfCell = transform.rotation * new Vector3(cellSize, cellSize, 0) * 0.5f;
+        for (int x = 0; x < gridWidth; x++)
+        {
+            for (int y = 0; y < gridHeight; y++)
+            {
+                Vector3 cellCenter = tempGrid.GetWorldPosition(x, y) + halfCell;
+                // 判断该点是否在边界内
+                buildableMap[x, y] = buildableArea.IsWorldPointInside(cellCenter);
+            }
+        }
+        grid = new GridSystem(gridWidth, gridHeight, cellSize, gridOrigin, transform, buildableMap);
+    }
+
+    // 处理来自CameraController的点击事件，在建造模式下尝试放置建筑
+    public void HandleTapOnGrid(Vector3 worldPosition)
+    {
+        if (!isInBuildMode) return;
+        grid.GetXY(worldPosition, out int x, out int y);
+        // 如果还没有预览对象 (第一次点击)
+        if (previewObject == null)
+        {
+            if (grid.CanBuildArea(x, y, selectedBuilding.width, selectedBuilding.height))
+            {
+                // 创建预览对象
+                Vector3 placementPosition = grid.GetWorldPosition(x, y);
+                previewObject = Instantiate(selectedBuilding.prefab, placementPosition, Quaternion.identity, buildingParent);
+                previewPosition = new Vector2Int(x, y);
+                // 禁用其逻辑脚本，它只是个预览
+                if (previewObject.TryGetComponent<BuildingInstance>(out var instance))
+                {
+                    instance.enabled = false;
+                }
+                
+                // 设置为半透明
+                previewRenderer = previewObject.GetComponent<SpriteRenderer>();
+                if (previewRenderer != null)
+                {
+                    Color color = previewRenderer.color;
+                    color.a = 0.6f; // 60% 透明度
+                    previewRenderer.color = color;
+                }
+                
+                // 放置预览后，隐藏网格
+                HideGridVisual();
+            }
+        }
+        // 如果已经有预览对象了 (第二次或之后的点击)
+        else
+        {
+            // 如果点击的是预览对象所在的位置 (确认放置)
+            if (x >= previewPosition.x && x < previewPosition.x + selectedBuilding.width &&
+                y >= previewPosition.y && y < previewPosition.y + selectedBuilding.height)
+            {
+                // 销毁预览对象
+                Destroy(previewObject);
+                previewObject = null;
+                // 在相同位置放置真实建筑
+                PlaceBuilding(previewPosition.x, previewPosition.y);
+            }
+            // 如果点击的是其他位置 (移动预览)
+            else
+            {
+                if (grid.CanBuildArea(x, y, selectedBuilding.width, selectedBuilding.height))
+                {
+                    // 移动预览对象
+                    previewObject.transform.position = grid.GetWorldPosition(x, y);
+                    previewPosition = new Vector2Int(x, y);
+                }
+                else
+                {
+                    // 可以在此添加一个无效提示，比如让预览闪烁红色
+                    Debug.Log("无法移动到此处！");
+                }
+            }
+        }
+    }
+
+    // 在指定网格坐标放置建筑
+    private void PlaceBuilding(int startX, int startY)
+    {
+        // 这个点就是 (startX, startY) 格子的左下角顶点
+        Vector3 placementPosition = grid.GetWorldPosition(startX, startY);
+        // 实例化建筑，它的Pivot(底部中心)会被精确地放置在 placementPosition 上
+        GameObject buildingGO = Instantiate(selectedBuilding.prefab, placementPosition, Quaternion.identity, buildingParent);
+
+        BuildingInstance buildingInstance = buildingGO.GetComponent<BuildingInstance>();
+        if (buildingInstance != null)
+        {
+            buildingInstance.Initialize(selectedBuilding);
+        }
+        else
+        {
+            Debug.LogError($"放置的建筑 {selectedBuilding.name} 的Prefab上没有找到 BuildingInstance 脚本！");
+        }
+        GameManager.Instance.AddMoney(-selectedBuilding.cost);
+        grid.PlaceObjectOnArea(startX, startY, selectedBuilding.width, selectedBuilding.height,
+                new PlacedObject(selectedBuilding, startX, startY, buildingInstance));
+        if (buildingInstance != null)
+        {
+            buildingInstance.UpdateRoadConnectionStatus();
+        }
+        // 2. 如果新放置的是道路，则通知其所有邻居更新状态
+        if (selectedBuilding.buildingType == BuildingType.Road)
+        {
+            NotifyNeighborsOfRoadPlacement(startX, startY, selectedBuilding.width, selectedBuilding.height);
+        }
+        Debug.Log($"在 ({startX},{startY}) 放置了建筑 {selectedBuilding.name}。");
+        GameManager.Instance.RequestEnterNormalMode();
+    }
+    
+    private void NotifyNeighborsOfRoadPlacement(int roadX, int roadY, int roadWidth, int roadHeight)
+    {
+        var neighbors = grid.GetNeighborsOfArea(roadX, roadY, roadWidth, roadHeight);
+        foreach (var neighborObject in neighbors)
+        {
+            // 获取邻居建筑的实例
+            BuildingInstance neighborInstance = neighborObject.GetInstance(); // 你需要在PlacedObject中添加一个GetInstance()方法
+            if (neighborInstance != null)
+            {
+                // 通知邻居更新其道路连接状态
+                neighborInstance.UpdateRoadConnectionStatus();
+            }
+        }
+    }
+
+    // 设置当前要建造的建筑类型
+    public void SetSelectedBuilding(BuildingData buildingData)
+    {
+        this.selectedBuilding = buildingData;
+        Debug.Log($"选择了建筑: {selectedBuilding.name}");
+        
+    }
+
+    private void HandleGameStateChange(GameState state)
+    {
+        if (state == GameState.Building)
+        {
+            selectedBuilding = GameManager.Instance.RequestedBuilding;
+            if (selectedBuilding != null)
+            {
+                EnterBuildMode();
+            }
+            else
+            {
+                Debug.LogError("进入建造模式失败：没有提供建筑数据。");
+                GameManager.Instance.RequestEnterNormalMode();
+            }
+        }
+        else
+        {
+            ExitBuildMode();
+        }
+    }
+
+    private void EnterBuildMode()
+    {
+        isInBuildMode = true;
+        ShowGridVisual();
+        Debug.Log("进入建造模式");
+    }
+
+    private void ExitBuildMode()
+    {
+        if (!isInBuildMode) return;
+        if (previewObject != null)
+        {
+            Destroy(previewObject);
+            previewObject = null;
+        }
+        isInBuildMode = false;
+        selectedBuilding = null;
+        HideGridVisual();
+        Debug.Log("退出建造模式");
+    }
+
+    #region 视觉表现逻辑
+
+    /// <summary>
+    /// 只为可建造的格子创建视觉元素
+    /// </summary>
+    private void CreateGridVisuals()
+    {
+        Quaternion gridRotation = transform.rotation;
+        for (int x = 0; x < gridWidth; x++)
+        {
+            for (int y = 0; y < gridHeight; y++)
+            {
+                if (grid.GetGridObject(x, y).isBuildable)
+                {
+                    Vector3 pos = grid.GetWorldPosition(x, y) + (gridRotation * new Vector3(cellSize, cellSize) * 0.5f);
+                    GameObject cellVisual = Instantiate(gridCellVisualPrefab, pos, gridRotation, gridVisualParent);
+                    cellVisual.transform.localScale = Vector3.one * cellSize;
+                    if (cellVisual.TryGetComponent<SpriteRenderer>(out var renderer))
+                    {
+                        renderer.color = defaultGridColor;
+                    }
+                    gridVisualArray[x, y] = cellVisual;
+                }
+            }
+        }
+        gridVisualParent.gameObject.SetActive(false);
+    }
+
+    private void ShowGridVisual()
+    {
+        gridVisualParent.gameObject.SetActive(true);
+    }
+
+    private void HideGridVisual()
+    {
+        ClearHighlights();
+        gridVisualParent.gameObject.SetActive(false);
+    }
+
+    private void UpdateAreaHighlight(int startX, int startY, int width, int height, Color color)
+    {
+        ClearHighlights();
+
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                int currentX = startX + x;
+                int currentY = startY + y;
+                if (currentX >= 0 && currentY >= 0 && currentX < gridWidth && currentY < gridHeight)
+                {
+                    if (gridVisualArray[currentX, currentY] != null)
+                    {
+                        gridVisualArray[currentX, currentY].GetComponent<SpriteRenderer>().color = color;
+                        highlightedCells.Add(new Vector2Int(currentX, currentY));
+                    }
+                }
+            }
+        }
+    }
+    
+    private void ClearHighlights()
+    {
+        foreach (var cellPos in highlightedCells)
+        {
+            if (gridVisualArray[cellPos.x, cellPos.y] != null)
+            {
+                gridVisualArray[cellPos.x, cellPos.y].GetComponent<SpriteRenderer>().color = defaultGridColor;
+            }
+        }
+        highlightedCells.Clear();
+    }
+
+    private void UpdateGhostPreview()
+    {
+        Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+        // 确保地面有一个大的碰撞体，并且属于能被射线检测到的Layer
+        if (Physics.Raycast(ray, out RaycastHit hit))
+        {
+            Vector3 worldPosition = hit.point;
+            grid.GetXY(worldPosition, out int x, out int y);
+            
+            // 清除上一帧的高亮
+            ClearHighlights();
+            
+            if (x >= 0 && y >= 0 && x < gridWidth && y < gridHeight)
+            {
+                bool canBuild = grid.CanBuildArea(x, y, selectedBuilding.width, selectedBuilding.height);
+                Color highlightColor = canBuild ? new Color(0, 1, 0, 0.3f) : new Color(1, 0, 0, 0.3f);
+                UpdateAreaHighlight(x, y, selectedBuilding.width, selectedBuilding.height, highlightColor);
+            }
+        }
+        else
+        {
+            // 如果鼠标没在网格上，清除高亮
+            ClearHighlights();
+        }
+    }
+
+    #endregion
+
+    #region 存档与读档
+
+    public List<BuildingSaveData> GetPlacedBuildingsSaveData()
+    {
+        List<BuildingSaveData> buildingsData = new List<BuildingSaveData>();
+        for (int x = 0; x < gridWidth; x++)
+        {
+            for (int y = 0; y < gridHeight; y++)
+            {
+                PlacedObject placedObject = grid.GetGridObject(x, y)?.GetPlacedObject();
+                if (placedObject != null && placedObject.IsOrigin(x, y))
+                {
+                    BuildingSaveData data = placedObject.GetSaveData();
+                    if (data != null)
+                    {
+                        buildingsData.Add(data);
+                    }
+                }
+            }
+        }
+        return buildingsData;
+    }
+
+    public void LoadLayout(LayoutData layoutData)
+    {
+        if (layoutData == null)
+        {
+            Debug.LogWarning("提供的 LayoutData 为空，无法加载布局。");
+            return;
+        }
+        // 调用现有的加载逻辑，传入布局中的建筑列表
+        LoadBuildingsFromSave(layoutData.GetBuildingSaveData());
+        Debug.Log($"成功从 LayoutData '{layoutData.name}' 获取到 {layoutData.GetBuildingSaveData().Count} 个建筑数据并开始加载。");
+    }
+
+
+    public void LoadBuildingsFromSave(List<BuildingSaveData> buildingsData)
+    {
+        ClearAllBuildings();
+        List<BuildingInstance> allLoadedInstances = new List<BuildingInstance>();
+        foreach (var data in buildingsData)
+        {
+            Debug.Log("1");
+            BuildingData buildingData = buildingDatabase.allBuildings.FirstOrDefault(b => b.name == data.buildingName);
+            if (buildingData == null)
+            {
+                Debug.LogError($"无法从存档加载建筑，找不到名为 '{data.buildingName}' 的BuildingData！");
+                continue;
+            }
+
+            // Vector3 localCenterOffset = new Vector3(buildingData.width * cellSize * 0.5f, buildingData.height * cellSize * 0.5f, 0f);
+            // Vector3 worldCenterOffset = transform.rotation * localCenterOffset;
+            // Vector3 buildingPosition = grid.GetWorldPosition(data.gridX, data.gridY) + worldCenterOffset;
+            Vector3 buildingPosition = grid.GetWorldPosition(data.gridX, data.gridY);
+
+            GameObject buildingGO = Instantiate(buildingData.prefab, buildingPosition, Quaternion.identity, buildingParent);
+            BuildingInstance buildingInstance = buildingGO.GetComponent<BuildingInstance>();
+            if (buildingInstance != null)
+            {
+                buildingInstance.Initialize(buildingData);
+                buildingInstance.RestoreState(data);
+                allLoadedInstances.Add(buildingInstance);
+                if (fountainBuildingData != null && buildingData == fountainBuildingData)
+                {
+                    this.fountainInstance = buildingInstance;
+                    Debug.Log("<color=green>喷泉实例已在加载时成功重新链接！</color>");
+                }
+            }
+
+            grid.PlaceObjectOnArea(data.gridX, data.gridY, buildingData.width, buildingData.height,
+                new PlacedObject(buildingData, data.gridX, data.gridY, buildingInstance));
+        }
+        StartCoroutine(UpdateAllConnectionsAfterLoad(allLoadedInstances));
+    }
+
+    private void ClearAllBuildings()
+    {
+        foreach (Transform child in buildingParent)
+        {
+            Destroy(child.gameObject);
+        }
+        // 重新初始化网格，以确保网格数据被清空
+        InitializeGrid();
+    }
+
+    #endregion
+
+    private void OnDrawGizmos()
+    {
+        if (grid != null)
+        {
+            for (int x = 0; x < gridWidth; x++)
+            {
+                for (int y = 0; y < gridHeight; y++)
+                {
+                    // 只为可建造的格子绘制Gizmos，让场景更清晰
+                    if (grid.GetGridObject(x, y).isBuildable)
+                    {
+                        Gizmos.color = new Color(0, 1, 0, 0.2f); // 绿色半透明
+                        Vector3 center = grid.GetWorldPosition(x, y) + transform.rotation * new Vector3(cellSize, cellSize) * 0.5f;
+                        Gizmos.DrawCube(center, transform.rotation * new Vector3(cellSize, cellSize, 0.1f));
+                    }
+                }
+            }
+        }
+    }
+
+    public GridSystem GetGrid()
+    {
+        return grid;
+    }
+
+    private IEnumerator UpdateAllConnectionsAfterLoad(List<BuildingInstance> instances)
+    {
+        yield return null; // 等待下一帧
+        Debug.Log("正在为所有已加载的建筑更新道路连接...");
+        foreach (var instance in instances)
+        {
+            if(instance != null) // 确保对象没有在加载过程中被销毁
+            {
+                instance.UpdateRoadConnectionStatus();
+            }
+        }
+    }
+}
+
+
+--- End of .\BuildManager.cs ---
+
+--- Start of .\BuildMenuUI.cs ---
+
+// BuildMenuUI.cs (修改后)
+using UnityEngine;
+using UnityEngine.UI;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+
+public class BuildMenuUI : MonoBehaviour
+{
+    [Header("UI引用")]
+    [SerializeField] private RectTransform buildButtonRect; // 主建设按钮的RectTransform
+    [SerializeField] private RectTransform buildMenuPanelRect; // 菜单主面板的RectTransform
+    [SerializeField] private CanvasGroup canvasGroup;
+    [SerializeField] private Transform contentParent; // 建筑列表的Content对象
+    [SerializeField] private GameObject buildingListItemPrefab;
+    [SerializeField] private List<TabButton> tabs;
+    
+    [SerializeField] private ScrollRect buildingListScrollRect; // 拖入包含建筑列表的ScrollRect组件
+
+    [Header("数据和设置")]
+    private BuildingDatabase buildingDatabase;
+    [SerializeField] private float animationDuration = 0.3f;
+
+    private bool isMenuOpen = false;
+    private Coroutine animationCoroutine;
+    private Canvas mainCanvas; // 缓存主Canvas
+
+    private void Awake()
+    {
+        buildingDatabase = Resources.Load<BuildingDatabase>("BuildingDatabase");
+        if (buildingDatabase == null)
+        {
+            Debug.LogError("!!!!!!!!!! BUILD MENU UI 修复失败: 无法从 Resources 加载 BuildingDatabase! !!!!!!!!!!");
+        }
+        mainCanvas = GetComponentInParent<Canvas>();
+        if (mainCanvas == null)
+        {
+            Debug.LogError("BuildMenuUI必须在一个Canvas下才能正常工作！");
+            return;
+        }
+
+        if (buildingListScrollRect != null)
+        {
+            buildingListScrollRect.vertical = false;
+            buildingListScrollRect.horizontal = true;
+            buildingListScrollRect.movementType = ScrollRect.MovementType.Clamped;
+        }
+        else
+        {
+            // 尝试自动查找，如果未在Inspector中指定
+            buildingListScrollRect = GetComponentInChildren<ScrollRect>();
+            if (buildingListScrollRect == null)
+            {
+                Debug.LogWarning("在BuildMenuUI中找不到ScrollRect组件，请在Inspector中手动指定。滑动行为可能不正确。");
+            }
+        }
+
+        // 初始时将菜单完全移出屏幕右侧
+        buildMenuPanelRect.anchoredPosition = new Vector2(buildMenuPanelRect.rect.width, 0);
+        canvasGroup.alpha = 0;
+        canvasGroup.interactable = false;
+        canvasGroup.blocksRaycasts = false;
+        
+        // 为每个选项卡按钮添加监听器
+        foreach (var tab in tabs)
+        {
+            tab.Toggle.onValueChanged.AddListener((isSelected) =>
+            {
+                if (isSelected)
+                {
+                    OnTabSelected(tab);
+                }
+            });
+        }
+    }
+    
+    // 主建设按钮调用的方法
+    public void ToggleMenu()
+    {
+        isMenuOpen = !isMenuOpen;
+        if (isMenuOpen)
+        {
+            OpenMenu();
+        }
+        else
+        {
+            CloseMenu();
+        }
+    }
+
+    private void OpenMenu()
+    {
+        // 1. 设置菜单的高度和位置，使其与建设按钮对齐
+        SetPanelPositionAndHeight();
+
+        // 2. 激活面板，准备动画
+        buildMenuPanelRect.gameObject.SetActive(true);
+
+        // 3. 默认选中并显示第一个选项卡的内容
+        if (tabs.Count > 0)
+        {
+            tabs[0].Toggle.isOn = true;
+            // OnTabSelected 会被上面的isOn=true自动触发
+        }
+
+        // 4. 执行滑入动画
+        if (animationCoroutine != null) StopCoroutine(animationCoroutine);
+        animationCoroutine = StartCoroutine(AnimatePanel(0));
+    }
+
+    private void CloseMenu()
+    {
+        if (GameManager.Instance.CurrentState == GameState.Building)
+        {
+            GameManager.Instance.RequestEnterNormalMode();
+        }
+        
+        // 执行滑出动画
+        if (animationCoroutine != null) StopCoroutine(animationCoroutine);
+        float hiddenXPos = buildMenuPanelRect.rect.width;
+        animationCoroutine = StartCoroutine(AnimatePanel(hiddenXPos));
+    }
+
+    private void SetPanelPositionAndHeight()
+    {
+
+        // 1. 确保两个RectTransform都在同一个Canvas下，这样它们的坐标系才有可比性
+        if (buildButtonRect.root != buildMenuPanelRect.root)
+        {
+            Debug.LogError("建设按钮和菜单面板不在同一个Canvas下，无法直接对齐！");
+            return;
+        }
+
+        // 2. 获取建设按钮的中心点在其父RectTransform中的本地坐标
+        Vector2 buttonCenterLocalPos = buildButtonRect.anchoredPosition;
+
+        // 3. 将这个本地坐标转换成菜单面板的父RectTransform中的坐标
+        //    这步是关键，它处理了两个UI元素可能不在同一个直接父级下的情况。
+        Vector3 buttonWorldPos = buildButtonRect.TransformPoint(buildButtonRect.rect.center);
+        Vector2 targetLocalPos = ((RectTransform)buildMenuPanelRect.parent).InverseTransformPoint(buttonWorldPos);
+
+        // 4. 设置菜单面板的位置
+        //    我们只需要设置Y轴，X轴由滑入/滑出动画控制
+        buildMenuPanelRect.anchoredPosition = new Vector2(buildMenuPanelRect.anchoredPosition.x, targetLocalPos.y);
+
+        // （可选）如果你还想让菜单面板的高度和按钮一样
+        // float buttonHeight = buildButtonRect.rect.height;
+        // buildMenuPanelRect.sizeDelta = new Vector2(buildMenuPanelRect.sizeDelta.x, buttonHeight);
+    }
+
+
+
+    private IEnumerator AnimatePanel(float targetX)
+    {
+        float startX = buildMenuPanelRect.anchoredPosition.x;
+        float time = 0f;
+        
+        bool isOpening = targetX == 0;
+        canvasGroup.interactable = false;
+        canvasGroup.blocksRaycasts = false;
+        
+        if(isOpening) canvasGroup.alpha = 1;
+
+        while (time < animationDuration)
+        {
+            time += Time.deltaTime;
+            float progress = time / animationDuration;
+            float newX = Mathf.Lerp(startX, targetX, progress);
+            buildMenuPanelRect.anchoredPosition = new Vector2(newX, buildMenuPanelRect.anchoredPosition.y);
+            yield return null;
+        }
+
+        buildMenuPanelRect.anchoredPosition = new Vector2(targetX, buildMenuPanelRect.anchoredPosition.y);
+        
+        if (isOpening)
+        {
+            canvasGroup.interactable = true;
+            canvasGroup.blocksRaycasts = true;
+        }
+        else
+        {
+            canvasGroup.alpha = 0;
+            buildMenuPanelRect.gameObject.SetActive(false);
+        }
+    }
+
+    private void OnTabSelected(TabButton selectedTab)
+    {
+        foreach (var tab in tabs)
+        {
+            tab.SetSelected(tab == selectedTab);
+        }
+        PopulateBuildingList(selectedTab.Category);
+    }
+
+    private void PopulateBuildingList(BuildingType category)
+    {
+        foreach (Transform child in contentParent)
+        {
+            Destroy(child.gameObject);
+        }
+        // 1. Get normal unlocked buildings from the database
+        List<BuildingData> buildingsToShow = buildingDatabase.GetBuildingsByType(category)
+            .Where(b => UnlockManager.Instance.IsUnlocked(b.name) && !b.isTrueVersion) // Explicitly exclude true versions here
+            .ToList();
+        // 2. If in NG+, get the runtime-generated true buildings
+        if (GameManager.Instance.isNewGamePlus)
+        {
+            List<BuildingData> trueBuildings = UnlockManager.Instance.GetUnlockedTrueBuildingsForCategory(category);
+            buildingsToShow.AddRange(trueBuildings);
+        }
+        
+        // 3. Instantiate UI items for the combined list
+        foreach (BuildingData data in buildingsToShow)
+        {
+            // Filter out the original versions of special replacement buildings if their replacement is unlocked
+            // (e.g., Don't show "Fountain" if "Heart of the Ocean" is available)
+            // This is an optional refinement, but good practice.
+            if (data.name == "Fountain" && UnlockManager.Instance.IsUnlocked("海洋之心")) continue;
+            GameObject itemGO = Instantiate(buildingListItemPrefab, contentParent);
+            BuildingListItemUI itemUI = itemGO.GetComponent<BuildingListItemUI>();
+            if (itemUI != null)
+            {
+                itemUI.Setup(data);
+            }
+        }
+    }
+
+    
+    // 你的TabButton辅助类 (保持不变)
+    [System.Serializable]
+    public class TabButton
+    {
+        public BuildingType Category;
+        public Toggle Toggle;
+        public Image BackgroundImage;
+        public Color SelectedColor = Color.white;
+        public Color DeselectedColor = Color.gray;
+
+        public void SetSelected(bool isSelected)
+        {
+            if (BackgroundImage != null)
+            {
+                BackgroundImage.color = isSelected ? SelectedColor : DeselectedColor;
+            }
+        }
+    }
+}
+
+
+--- End of .\BuildMenuUI.cs ---
+
+--- Start of .\CameraController.cs ---
+
+// CameraController.cs
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.EventSystems;
+
+[RequireComponent(typeof(Camera))]
+public class CameraController : MonoBehaviour
+{
+    [Header("相机组件")]
+    private Camera mainCamera;
+    [SerializeField] private LayerMask groundLayerMask;
+
+    [Header("缩放设置")]
+    [SerializeField] private float zoomSpeed = 0.01f;
+    [SerializeField] private float minZoomSize = 5f;
+    [SerializeField] private float maxZoomSize = 25f;
+
+    [Header("平移设置")]
+    [SerializeField] private float panSpeed = 0.015f;
+    [SerializeField] private Vector2 panLimitMin = new Vector2(-20, -15);
+    [SerializeField] private Vector2 panLimitMax = new Vector2(20, 15);
+
+    [Header("点击/拖拽判定")]
+    [SerializeField] private float tapThresholdDuration = 0.2f;
+    [SerializeField] private float tapThresholdDistance = 10f; // 屏幕像素距离
+
+    public Vector3 flashbackCameraPosition = new Vector3(0, 0, -10);
+    public float flashbackCameraSize = 15f;
+    private Vector3 originalCameraPosition;
+    private float originalCameraSize;
+
+    private Vector3 touchStartPosition;
+    private float touchStartTime;
+
+    private void Awake()
+    {
+        mainCamera = GetComponent<Camera>();
+    }
+
+    private void Update()
+    {
+        // 【改动】 允许在 Normal, Building 和 Finale 状态下操作相机
+        GameState currentState = GameManager.Instance.CurrentState;
+        if (currentState != GameState.Normal &&
+            currentState != GameState.Building &&
+            currentState != GameState.Finale) // <-- 新增此行
+        {
+            return;
+        }
+
+        if (Input.touchCount > 0)
+        {
+            HandleTouchInput();
+        }
+#if UNITY_EDITOR
+        else
+        {
+            HandleMouseInput();
+        }
+#endif
+    }
+
+    private void HandleTouchInput()
+    {
+        switch (Input.touchCount)
+        {
+            case 1:
+                HandleSingleTouch();
+                break;
+            case 2:
+                HandleDoubleTouch();
+                break;
+        }
+    }
+
+    private void HandleSingleTouch()
+    {
+        Touch touch = Input.GetTouch(0);
+        if (EventSystem.current.IsPointerOverGameObject(touch.fingerId)) return;
+
+        switch (touch.phase)
+        {
+            case TouchPhase.Began:
+                touchStartTime = Time.time;
+                touchStartPosition = touch.position;
+                break;
+            case TouchPhase.Moved:
+                PanCamera(touch.deltaPosition);
+                break;
+            case TouchPhase.Ended:
+                float touchDuration = Time.time - touchStartTime;
+                float touchDistance = Vector2.Distance(touchStartPosition, touch.position);
+                if (touchDuration < tapThresholdDuration && touchDistance < tapThresholdDistance)
+                {
+                    HandleTap(touch.position);
+                }
+                break;
+        }
+    }
+
+    private void HandleDoubleTouch()
+    {
+        Touch touchZero = Input.GetTouch(0);
+        Touch touchOne = Input.GetTouch(1);
+        if (EventSystem.current.IsPointerOverGameObject(touchZero.fingerId) || EventSystem.current.IsPointerOverGameObject(touchOne.fingerId)) return;
+        
+        Vector2 touchZeroPrevPos = touchZero.position - touchZero.deltaPosition;
+        Vector2 touchOnePrevPos = touchOne.position - touchOne.deltaPosition;
+        float prevMagnitude = (touchZeroPrevPos - touchOnePrevPos).magnitude;
+        float currentMagnitude = (touchZero.position - touchOne.position).magnitude;
+        float difference = currentMagnitude - prevMagnitude;
+        ZoomCamera(difference * zoomSpeed);
+    }
+    
+#if UNITY_EDITOR
+    private void HandleMouseInput()
+    {
+        if (Input.mouseScrollDelta.y != 0)
+        {
+             if (EventSystem.current.IsPointerOverGameObject()) return;
+            ZoomCamera(Input.mouseScrollDelta.y);
+        }
+
+        if (Input.GetMouseButton(1) || Input.GetMouseButton(2))
+        {
+            if (EventSystem.current.IsPointerOverGameObject()) return;
+            Vector2 mouseDelta = new Vector2(Input.GetAxis("Mouse X"), Input.GetAxis("Mouse Y"));
+            PanCamera(mouseDelta * -15f); 
+        }
+
+        if (Input.GetMouseButtonDown(0))
+        {
+            if (EventSystem.current.IsPointerOverGameObject()) return;
+            HandleTap(Input.mousePosition);
+        }
+    }
+#endif
+
+    private void PanCamera(Vector2 delta)
+    {
+        Vector3 move = -new Vector3(delta.x, delta.y, 0) * panSpeed * (mainCamera.orthographicSize / maxZoomSize);
+        transform.Translate(move, Space.Self);
+        Vector3 clampedPosition = transform.position;
+        clampedPosition.x = Mathf.Clamp(clampedPosition.x, panLimitMin.x, panLimitMax.x);
+        clampedPosition.y = Mathf.Clamp(clampedPosition.y, panLimitMin.y, panLimitMax.y);
+        transform.position = clampedPosition;
+    }
+
+    private void ZoomCamera(float increment)
+    {
+        mainCamera.orthographicSize = Mathf.Clamp(mainCamera.orthographicSize - increment, minZoomSize, maxZoomSize);
+    }
+
+    private void HandleTap(Vector2 screenPosition)
+    {
+        Ray ray = mainCamera.ScreenPointToRay(screenPosition);
+        if (Physics.Raycast(ray, out RaycastHit hit, 100f, groundLayerMask))
+        {
+            if (GameManager.Instance.CurrentState == GameState.Building)
+            {
+                BuildManager.Instance.HandleTapOnGrid(hit.point);
+            }
+            // 【改动】在Finale状态下，点击不再触发建筑交互，但相机仍然可以移动
+            else if (GameManager.Instance.CurrentState == GameState.Normal)
+            {
+                if (hit.collider.TryGetComponent<BuildingInstance>(out var buildingInstance))
+                {
+                    buildingInstance.HandleInteraction();
+                }
+            }
+        }
+    }
+
+    public IEnumerator MoveToView(Vector3 targetPosition, float targetSize, float duration)
+    {
+        originalCameraPosition = transform.position;
+        originalCameraSize = mainCamera.orthographicSize;
+        float timer = 0f;
+        Vector3 startPos = transform.position;
+        float startSize = mainCamera.orthographicSize;
+        while (timer < duration)
+        {
+            timer += Time.deltaTime;
+            float progress = Mathf.SmoothStep(0, 1, timer / duration);
+            transform.position = Vector3.Lerp(startPos, targetPosition, progress);
+            mainCamera.orthographicSize = Mathf.Lerp(startSize, targetSize, progress);
+            yield return null;
+        }
+        transform.position = targetPosition;
+        mainCamera.orthographicSize = targetSize;
+    }
+    
+    public IEnumerator RestoreOriginalView(float duration)
+    {
+        yield return StartCoroutine(MoveToView(originalCameraPosition, originalCameraSize, duration));
+    }
+}
+
+
+--- End of .\CameraController.cs ---
+
+--- Start of .\FinaleManager.cs ---
+
+// FinaleManager.cs
+using UnityEngine;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using TMPro;
+using UnityEngine.SceneManagement; 
+
+public class FinaleManager : MonoBehaviour
+{
+    public static FinaleManager Instance { get; private set; }
+
+    [Header("结局UI")]
+    [SerializeField] private GameObject endScreenPanel;
+    [SerializeField] private TextMeshProUGUI endScreenText;
+    [SerializeField] private string mainMenuSceneName = "MainMenu";
+
+    [Header("单位 Prefabs")]
+    [SerializeField] private GameObject monsterPrefab;
+    [SerializeField] private GameObject ruinPrefab; 
+
+    [Header("防御塔设置")]
+    [SerializeField] private Sprite towerSprite; 
+    [SerializeField] public GameObject projectilePrefab;
+
+    [Header("战斗数值 (基础值与动态加成)")]
+    [Tooltip("怪物的初始基础血量")]
+    [SerializeField] private float baseMonsterHealth = 50f;
+    [Tooltip("怪物的初始基础伤害")]
+    [SerializeField] private float baseMonsterDamage = 10f;
+    [Tooltip("每存在一个建筑(非道路/农田)，怪物额外增加的血量")]
+    [SerializeField] private float healthPerBuilding = 5f;
+    [Tooltip("每存在一个建筑(非道路/农田)，怪物额外增加的伤害")]
+    [SerializeField] private float damagePerBuilding = 0.5f;
+
+    [Space(10)]
+    [Tooltip("普通建筑的血量")]
+    public float buildingHealth = 200f;
+    [Tooltip("防御塔(装饰建筑)的血量")]
+    public float towerHealth = 150f;
+    [Tooltip("防御塔的伤害")]
+    public float towerDamage = 15f;
+    [Tooltip("防御塔的攻击速度(秒/次)")]
+    public float towerAttackSpeed = 1.2f; 
+    [Tooltip("怪物的攻击速度(秒/次)")]
+    public float monsterAttackSpeed = 1.5f;
+    
+    [Header("其他设置")]
+    [Tooltip("怪物在坏结局时走向的大海位置")]
+    public Vector3 seaPosition = new Vector3(0, -20, 0); 
+    
+    public float currentMonsterHealth { get; private set; }
+    public float currentMonsterDamage { get; private set; }
+
+    private bool hasStarted = false;
+    private bool isFinaleRunning = false;
+    
+    public List<MonsterAI> activeMonsters = new List<MonsterAI>();
+    public List<Health> activeBuildings = new List<Health>();
+    public List<ResidentAI> activeResidents = new List<ResidentAI>();
+
+    private bool hasHeartOfOcean = false;
+
+    private void Awake()
+    {
+        if (Instance != null)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+        gameObject.SetActive(false); 
+    }
+
+    public void StartFinale()
+    {
+        if (hasStarted)
+        {
+            Debug.LogWarning("StartFinale 被重复调用，已阻止！");
+            return;
+        }
+        hasStarted = true;
+        Debug.Log("FinaleManager.StartFinale() 被调用。");
+    
+        gameObject.SetActive(true);
+        StartCoroutine(FinaleActivationCoroutine());
+    }
+
+    private IEnumerator FinaleActivationCoroutine()
+    {
+        yield return StartCoroutine(UIManager.Instance.FadeScreen(false, 0.5f)); 
+                                                                               
+        isFinaleRunning = true;
+        Debug.Log("--- 第十日审判开始 ---");
+        if (UIManager.Instance != null)
+        {
+            UIManager.Instance.ShowOverlay();
+            UIManager.Instance.HideGameUIForFinale();
+        }
+        if (KiraController.Instance != null) KiraController.Instance.gameObject.SetActive(false);
+        
+        CalculateMonsterStats();
+
+        InitializeBuildings();
+        SpawnMonsters();
+        
+        if (activeMonsters.Count == 0 && isFinaleRunning)
+        {
+            isFinaleRunning = false;
+            if (hasHeartOfOcean && activeResidents.Count > 0)
+            {
+                StartCoroutine(ShowTrueEnd());
+            }
+            else
+            {
+                StartCoroutine(ShowGoodEnd());
+            }
+            yield break; 
+        }
+        if (activeBuildings.Count == 0 && isFinaleRunning)
+        {
+            isFinaleRunning = false;
+            StartCoroutine(ShowBadEnd());
+            yield break; 
+        }
+        
+        StartCoroutine(CheckEndConditions());
+    }
+
+    private void CalculateMonsterStats()
+    {
+        int buildingCount = BuildManager.Instance.GetGrid().GetAllPlacedObjects()
+            .Count(obj => obj.GetBuildingData().buildingType != BuildingType.Road && 
+                          obj.GetBuildingData().buildingType != BuildingType.Farmland);
+
+        currentMonsterHealth = baseMonsterHealth + (buildingCount * healthPerBuilding);
+        currentMonsterDamage = baseMonsterDamage + (buildingCount * damagePerBuilding);
+        
+        Debug.Log($"<color=orange>最终战动态难度计算: 场上建筑数量 {buildingCount}。" +
+                  $"怪物最终血量: {currentMonsterHealth} (基础{baseMonsterHealth} + 加成{buildingCount * healthPerBuilding}), " +
+                  $"怪物最终伤害: {currentMonsterDamage} (基础{baseMonsterDamage} + 加成{buildingCount * damagePerBuilding})</color>");
+    }
+
+    private void InitializeBuildings()
+    {
+        List<PlacedObject> allPlacedObjects = BuildManager.Instance.GetGrid().GetAllPlacedObjects();
+        Debug.Log($"找到 {allPlacedObjects.Count} 个已放置的建筑对象进行最终战初始化。");
+
+        foreach (var placedObject in allPlacedObjects)
+        {
+            BuildingInstance buildingInstance = placedObject.GetInstance();
+            if (buildingInstance == null) continue;
+
+            BuildingData data = placedObject.GetBuildingData();
+            Health health;
+
+            if (data.isSpecialReplacement)
+            {
+                health = buildingInstance.gameObject.AddComponent<Health>();
+                health.Initialize(towerHealth * 5, ruinPrefab);
+                buildingInstance.gameObject.AddComponent<PurificationAura>();
+                activeBuildings.Add(health);
+                hasHeartOfOcean = true;
+                Debug.Log("<color=cyan>海洋之心已激活！</color>");
+            }
+            else if (data.buildingType == BuildingType.Decoration || (GameManager.Instance.isNewGamePlus && data.isTrueVersion))
+            {
+                health = buildingInstance.gameObject.AddComponent<Health>();
+                health.Initialize(towerHealth, null);
+                buildingInstance.gameObject.AddComponent<TowerAI>();
+                if (towerSprite != null) buildingInstance.GetComponent<SpriteRenderer>().sprite = towerSprite;
+                activeBuildings.Add(health);
+            }
+            else if (data.buildingType == BuildingType.Residential || data.buildingType == BuildingType.Commercial)
+            {
+                health = buildingInstance.gameObject.AddComponent<Health>();
+                health.Initialize(buildingHealth, ruinPrefab);
+                activeBuildings.Add(health);
+            }
+        }
+        Debug.Log($"初始化完成，可攻击的建筑/塔总数: {activeBuildings.Count}");
+    }
+
+    // 在 FinaleManager.cs 中
+
+    private void SpawnMonsters()
+    {
+        int monsterCount = GameManager.Instance.population;
+        Debug.Log($"总人口: {GameManager.Instance.population}, 生成怪物数量: {monsterCount}");
+        if (monsterCount == 0) return;
+
+        // 步骤1: 收集所有可能的生成点（住宅）
+        List<Vector3> spawnPoints = new List<Vector3>();
+        foreach (var buildingHealth in activeBuildings)
+        {
+            if (buildingHealth != null && buildingHealth.TryGetComponent<BuildingInstance>(out var instance) &&
+                instance.GetBuildingData().buildingType == BuildingType.Residential)
+            {
+                spawnPoints.Add(buildingHealth.transform.position);
+            }
+        }
+
+        // 步骤2: 处理没有住宅的边缘情况
+        if (spawnPoints.Count == 0)
+        {
+            if (activeBuildings.Count > 0)
+            {
+                // 如果没有住宅但有其他建筑，随便找一个
+                spawnPoints.Add(activeBuildings[Random.Range(0, activeBuildings.Count)].transform.position);
+                Debug.LogWarning("没有找到住宅作为生成点，已使用随机建筑位置替代。");
+            }
+            else
+            {
+                // 连建筑都没有，只能在原点生成
+                spawnPoints.Add(Vector3.zero);
+                Debug.LogError("没有任何建筑可以作为怪物生成点！");
+            }
+        }
+
+        // 步骤3: 【核心修改】循环生成怪物，并使用取模运算(%)来轮流使用生成点
+        for (int i = 0; i < monsterCount; i++)
+        {
+            // 使用 i % spawnPoints.Count 来确保索引不会越界，并且能在所有生成点之间循环
+            // 例如：i=0, 索引=0; i=1, 索引=1; i=2, 索引=0; i=3, 索引=1 ...
+            int spawnPointIndex = i % spawnPoints.Count;
+            Vector3 basePos = spawnPoints[spawnPointIndex];
+
+            // 在基础位置上增加一个小的随机偏移，防止怪物完全重叠
+            Vector3 finalPos = basePos + new Vector3(Random.Range(-0.5f, 0.5f), Random.Range(-0.5f, 0.5f), 0);
+
+            GameObject monsterGO = Instantiate(monsterPrefab, finalPos, Quaternion.identity);
+            monsterGO.AddComponent<Health>().Initialize(currentMonsterHealth, null);
+            MonsterAI monsterAI = monsterGO.GetComponent<MonsterAI>();
+            activeMonsters.Add(monsterAI);
+        }
+    }
+
+
+
+    private IEnumerator CheckEndConditions()
+    {
+        while (isFinaleRunning)
+        {
+            yield return new WaitForSeconds(1f); 
+
+            activeMonsters.RemoveAll(item => item == null);
+            activeBuildings.RemoveAll(item => item == null);
+            activeResidents.RemoveAll(item => item == null);
+
+            if (hasHeartOfOcean && activeMonsters.Count == 0 && activeResidents.Count > 0 && isFinaleRunning)
+            {
+                isFinaleRunning = false;
+                StartCoroutine(ShowTrueEnd());
+                yield break;
+            }
+            
+            if (activeMonsters.Count == 0 && isFinaleRunning)
+            {
+                isFinaleRunning = false;
+                StartCoroutine(ShowGoodEnd());
+                yield break;
+            }
+            
+            if (activeBuildings.Count == 0 && isFinaleRunning)
+            {
+                isFinaleRunning = false;
+                StartCoroutine(ShowBadEnd());
+                yield break;
+            }
+        }
+    }
+
+    #region 单位管理
+    public void OnMonsterDefeated(MonsterAI monster)
+    {
+        if (activeMonsters.Contains(monster)) activeMonsters.Remove(monster);
+    }
+
+    public void OnBuildingDestroyed(Health building)
+    {
+        if (activeBuildings.Contains(building)) activeBuildings.Remove(building);
+    }
+
+    public void OnResidentCreated(ResidentAI resident)
+    {
+        if (!activeResidents.Contains(resident)) activeResidents.Add(resident);
+    }
+
+    public void OnResidentDestroyed(ResidentAI resident)
+    {
+        if (activeResidents.Contains(resident)) activeResidents.Remove(resident);
+    }
+    #endregion
+
+    #region 结局协程
+    
+    // 【新增】用于实现文字动画的协程
+    private IEnumerator AnimateEndingText(string narrativeText, string endTitle)
+    {
+        endScreenPanel.SetActive(true);
+        endScreenText.gameObject.SetActive(true);
+        
+        // --- 第一部分：淡入叙事文字 ---
+        endScreenText.text = narrativeText;
+        endScreenText.color = new Color(endScreenText.color.r, endScreenText.color.g, endScreenText.color.b, 0);
+        float timer = 0f;
+        while (timer < 2f)
+        {
+            timer += Time.unscaledDeltaTime;
+            float alpha = Mathf.Lerp(0, 1, timer / 2f);
+            endScreenText.color = new Color(endScreenText.color.r, endScreenText.color.g, endScreenText.color.b, alpha);
+            yield return null;
+        }
+        
+        yield return new WaitForSecondsRealtime(3f); // 停留
+
+        // --- 第二部分：淡出叙事文字 ---
+        timer = 0f;
+        while (timer < 2f)
+        {
+            timer += Time.unscaledDeltaTime;
+            float alpha = Mathf.Lerp(1, 0, timer / 2f);
+            endScreenText.color = new Color(endScreenText.color.r, endScreenText.color.g, endScreenText.color.b, alpha);
+            yield return null;
+        }
+
+        yield return new WaitForSecondsRealtime(0.5f);
+
+        // --- 第三部分：淡入结局标题 ---
+        endScreenText.text = endTitle;
+        timer = 0f;
+        while (timer < 2f)
+        {
+            timer += Time.unscaledDeltaTime;
+            float alpha = Mathf.Lerp(0, 1, timer / 2f);
+            endScreenText.color = new Color(endScreenText.color.r, endScreenText.color.g, endScreenText.color.b, alpha);
+            yield return null;
+        }
+        
+        yield return new WaitForSecondsRealtime(3f); // 结局标题停留
+    }
+
+    // 【修改】重写结局流程
+    private IEnumerator ShowGoodEnd()
+    {
+        Debug.Log("结局：好结局");
+        SaveManager.SetCompletionFlag(); 
+        yield return new WaitForSeconds(1f);
+        yield return StartCoroutine(UIManager.Instance.FadeScreen(true, 1.5f));
+
+        yield return StartCoroutine(AnimateEndingText("审判结束了。", "Good End"));
+
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(mainMenuSceneName);
+    }
+
+    private IEnumerator ShowBadEnd()
+    {
+        Debug.Log("结局：坏结局");
+        SaveManager.SetCompletionFlag();
+
+        foreach (var monster in activeMonsters)
+        {
+            if(monster != null) monster.GoToSea();
+        }
+        
+        yield return new WaitForSeconds(5f); 
+        yield return StartCoroutine(UIManager.Instance.FadeScreen(true, 1.5f));
+
+        yield return StartCoroutine(AnimateEndingText("一切归于沉寂。\n沉寂。", "Bad End"));
+        
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(mainMenuSceneName);
+    }
+
+    private IEnumerator ShowTrueEnd()
+    {
+        Debug.Log("结局：真结局");
+        SaveManager.DeleteCompletionFlag();
+        SaveManager.DeleteSaveData();
+
+        yield return new WaitForSeconds(2f);
+        yield return StartCoroutine(UIManager.Instance.FadeScreen(true, 2f));
+
+        yield return StartCoroutine(AnimateEndingText("你记起来了。\n火焰散尽，她终于得到解脱。\n岛屿迎来了真正的黎明。", "True End"));
+
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(mainMenuSceneName);
+    }
+    #endregion
+}
+
+
+--- End of .\FinaleManager.cs ---
+
+--- Start of .\FlashbackManager.cs ---
+
+// FlashbackManager.cs (已修改为使用SpriteRenderer)
+using UnityEngine;
+using System.Collections.Generic;
+using System.Linq;
+
+public class FlashbackManager : MonoBehaviour
+{
+    public static FlashbackManager Instance { get; private set; }
+
+    [System.Serializable]
+    public class FlashbackEntry
+    {
+        public int day;
+        public Sprite flashbackImage;
+        public Color backgroundColor = Color.black; 
+    }
+
+    [Header("闪回设置")]
+    [SerializeField] private List<FlashbackEntry> flashbacks;
+    // 【改动】将UI Image替换为SpriteRenderer
+    [SerializeField] private SpriteRenderer flashbackSpriteRenderer;
+
+    private Color originalCameraColor;
+
+    private void Awake()
+    {
+        if (Instance != null)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+
+        // 确保一开始闪回对象是隐藏的
+        if (flashbackSpriteRenderer != null)
+        {
+            flashbackSpriteRenderer.gameObject.SetActive(false);
+        }
+        else
+        {
+            Debug.LogError("FlashbackManager上的Flashback Sprite Renderer字段未设置！");
+        }
+    }
+
+    public FlashbackEntry GetFlashbackForDay(int day)
+    {
+        return flashbacks.FirstOrDefault(e => e.day == day);
+    }
+
+    public void ShowFlashback(FlashbackEntry entry)
+    {
+        if (entry == null || entry.flashbackImage == null || flashbackSpriteRenderer == null)
+        {
+            Debug.LogWarning($"请求的闪回数据或SpriteRenderer为空。");
+            return;
+        }
+
+        Debug.Log($"--- 准备显示第 {entry.day} 天的闪回Sprite ---");
+        
+        originalCameraColor = Camera.main.backgroundColor;
+        Camera.main.backgroundColor = entry.backgroundColor;
+
+        // 【改动】操作SpriteRenderer来显示图片
+        flashbackSpriteRenderer.sprite = entry.flashbackImage;
+        flashbackSpriteRenderer.gameObject.SetActive(true);
+    }
+
+    public void HideFlashback()
+    {
+        Debug.Log("--- 隐藏闪回Sprite ---");
+        
+        Camera.main.backgroundColor = originalCameraColor;
+
+        // 【改动】禁用SpriteRenderer的游戏对象
+        if (flashbackSpriteRenderer != null)
+        {
+            flashbackSpriteRenderer.gameObject.SetActive(false);
+        }
+    }
+}
+
+
+--- End of .\FlashbackManager.cs ---
+
+--- Start of .\FountainController.cs ---
+
+// FountainController.cs
+using UnityEngine;
+
+// 这是一个标记组件，将它挂在初始布局中的喷泉游戏对象上。
+// 喷泉的Prefab也需要挂载 BuildingInstance 脚本，但可以不Initialize。
+public class FountainController : MonoBehaviour
+{
+    // This script can be empty. Its existence is the marker.
+}
+
+
+--- End of .\FountainController.cs ---
+
+--- Start of .\GameManager.cs ---
+
+// GameManager.cs (已修改以配合SpriteRenderer闪回)
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public enum GameState { MainMenu, Normal, Building, Transitioning, Finale }
+
+public class GameManager : MonoBehaviour
+{
+    private static GameManager _instance;
+    public static GameManager Instance
+    {
+        get
+        {
+            if (_instance == null)
+            {
+                _instance = FindObjectOfType<GameManager>();
+                if (_instance == null)
+                {
+                    Debug.LogError("场景中找不到 GameManager 实例！");
+                }
+            }
+            return _instance;
+        }
+    }
+    public GameState CurrentState { get; private set; }
+    public int day = 9;
+    public float dayDuration = 300f;
+    public float transDuration = 15f;
+    public float flashDuration = 3f;
+    private float dayTimer;
+    public int population = 0;
+    public int money = 100;
+    public int goods = 50;
+    public UIManager uiManager;
+    public Transform worldRoot;
+    public static bool IsNewGamePlusPending { get; set; } = false;
+    public bool isNewGamePlus { get; private set; } = false;
+
+    public static bool ShouldLoadGame = false;
+    private LayoutData initialLayout;
+
+    public BuildingData RequestedBuilding { get; private set; }
+    
+    public static event Action<GameState> OnGameStateChanged;
+    public static event Action<int> OnDayStart;
+    public static event Action<int> OnDayEnd;
+    public static event Action<float, float> OnTimeUpdated;
+
+    private void Awake()
+    {
+        if (_instance != null && _instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        _instance = this;
+        
+        initialLayout = Resources.Load<LayoutData>("InitialLayout");
+        if (initialLayout == null)
+        {
+            Debug.LogError("!!!!!!!!!! 紧急错误：无法从 Resources 文件夹加载 InitialLayout！请检查文件名和位置！ !!!!!!!!!!");
+        }
+        if (IsNewGamePlusPending)
+        {
+            this.isNewGamePlus = true;
+        }
+    }
+
+    private void Start()
+    {
+        if (ShouldLoadGame)
+        {
+            LoadGameState();
+        }
+        else
+        {
+            UnlockManager.Instance.ResetUnlocks();
+            day = 1;
+            money = 100;
+            goods = 50;
+            population = 0;
+            if (initialLayout != null)
+            {
+                BuildManager.Instance.LoadLayout(initialLayout);
+            }
+            StartNewDay();
+        }
+    }
+
+    private void Update()
+    {
+        if (CurrentState != GameState.Normal) return;
+        dayTimer -= Time.deltaTime;
+        OnTimeUpdated?.Invoke(dayTimer, dayDuration);
+
+        if (dayTimer <= 0)
+        {
+            UpdateGameState(GameState.Transitioning);
+            OnDayEnd?.Invoke(day);
+            StartCoroutine(DayTransitionCoroutine());
+        }
+    }
+
+    private IEnumerator DayTransitionCoroutine()
+    {
+        UpdateGameState(GameState.Transitioning);
+        CameraController camController = Camera.main.GetComponent<CameraController>();
+
+        // 1. 镜头平滑移动
+        if (camController != null)
+        {
+            yield return StartCoroutine(camController.MoveToView(camController.flashbackCameraPosition, camController.flashbackCameraSize, 1.5f));
+        }
+
+        // 2. 屏幕缓缓变黑
+        yield return StartCoroutine(uiManager.FadeScreen(true, 1.0f));
+
+        var flashbackEntry = FlashbackManager.Instance.GetFlashbackForDay(day);
+
+        if (flashbackEntry != null)
+        {
+            // 在黑屏时，隐藏主游戏世界，并准备好闪回画面
+            worldRoot.gameObject.SetActive(false);
+            uiManager.HideInGameUI();
+            FlashbackManager.Instance.ShowFlashback(flashbackEntry);
+            
+            // 突然撤掉黑屏，显示闪回
+            uiManager.fadeScreen.color = Color.clear;
+            
+            // 等待
+            yield return new WaitForSeconds(flashDuration);
+            
+            // 突然恢复黑屏
+            uiManager.fadeScreen.color = Color.black;
+            
+            // 在黑屏时，清理闪回画面
+            FlashbackManager.Instance.HideFlashback();
+        }
+        else
+        {
+            // --- 普通日流程 ---
+            yield return new WaitForSeconds(1.0f);
+        }
+
+        // --- 后续通用流程 ---
+        // 8. 在黑屏期间处理后台逻辑
+        day++;
+        OnDayStart?.Invoke(day); 
+
+        if (day == 10)
+        {
+            // 【改动】在进入结局前，确保主世界是可见的
+            worldRoot.gameObject.SetActive(true);
+            uiManager.ShowInGameUI();
+            UpdateGameState(GameState.Finale);
+            if (FinaleManager.Instance != null) FinaleManager.Instance.StartFinale();
+            else Debug.LogError("场景中找不到 FinaleManager!");
+            yield break;
+        }
+
+        SaveGameState();
+
+        // 【改动】在恢复相机前，确保主世界重新可见
+        worldRoot.gameObject.SetActive(true);
+        uiManager.ShowInGameUI();
+
+        if (camController != null)
+        {
+            yield return StartCoroutine(camController.RestoreOriginalView(0.01f));
+        }
+
+        // 9. 屏幕缓缓变亮
+        yield return StartCoroutine(uiManager.FadeScreen(false, 1.0f));
+
+        // 10. 开始新的一天
+        StartNewDay();
+    }
+
+    private void StartNewDay()
+    {
+        if (uiManager != null)
+        {
+            uiManager.UpdateAllDisplays(money, goods);
+        }
+        dayTimer = dayDuration;
+        UpdateGameState(GameState.Normal);
+        OnDayStart?.Invoke(day);
+    }
+
+    public void SaveGameState()
+    {
+        SaveData data = new SaveData();
+        data.day = this.day;
+        data.money = this.money;
+        data.goods = this.goods;
+        data.population = this.population;
+        data.placedBuildings = BuildManager.Instance.GetPlacedBuildingsSaveData();
+        data.unlockedBuildingNames = UnlockManager.Instance.GetSaveData();
+        SaveManager.SaveGame(data);
+    }
+    public void LoadGameState()
+    {
+        SaveData data = SaveManager.LoadGame();
+        if (data == null)
+        {
+            Debug.LogError("加载失败: 找不到存档文件！");
+            StartNewDay();
+            return;
+        }
+        this.day = data.day;
+        this.money = data.money;
+        this.goods = data.goods;
+        this.population = data.population;
+        UnlockManager.Instance.LoadFromSave(data.unlockedBuildingNames);
+        BuildManager.Instance.LoadBuildingsFromSave(data.placedBuildings);
+        StartNewDay();
+    }
+
+    public void RequestEnterBuildMode(BuildingData buildingToBuild)
+    {
+        if (CurrentState == GameState.Building) return;
+        if (buildingToBuild.isSpecialReplacement)
+        {
+            BuildManager.Instance.TrySpecialReplacement(buildingToBuild);
+        }
+        else
+        {
+            RequestedBuilding = buildingToBuild;
+            UpdateGameState(GameState.Building);
+        }
+    }
+
+    public void RequestEnterNormalMode()
+    {
+        UpdateGameState(GameState.Normal);
+    }
+
+    public void AddMoney(int amount)
+    {
+        money += amount;
+        if (money < 0) money = 0;
+        uiManager.UpdateAllDisplays(money, goods);
+    }
+
+    public void AddGoods(int amount)
+    {
+        goods += amount;
+        if (goods < 0) goods = 0;
+        uiManager.UpdateAllDisplays(money, goods);
+    }
+    
+    public void AddPopulation(int amount)
+    {
+        population += amount;
+        if (population < 0) population = 0;
+    }
+
+    private void UpdateGameState(GameState newState)
+    {
+        if (CurrentState == newState) return;
+        CurrentState = newState;
+        if (newState != GameState.Building)
+        {
+            RequestedBuilding = null;
+        }
+        OnGameStateChanged?.Invoke(newState);
+    }
+}
+
+
+--- End of .\GameManager.cs ---
+
+--- Start of .\GridObject.cs ---
+
+// GridObject.cs
+public class GridObject
+{
+    private GridSystem grid;
+    public int x;
+    public int y;
+    private PlacedObject placedObject;
+
+    public bool isBuildable { get; private set; } // 新增：标记此格子本身是否可建造
+
+    // 修改：构造函数增加 isBuildable 参数
+    public GridObject(GridSystem grid, int x, int y, bool isBuildable)
+    {
+        this.grid = grid;
+        this.x = x;
+        this.y = y;
+        this.isBuildable = isBuildable; // 新增：初始化可建造属性
+    }
+
+    public void SetPlacedObject(PlacedObject placedObject)
+    {
+        this.placedObject = placedObject;
+    }
+
+    public void ClearPlacedObject()
+    {
+        this.placedObject = null;
+    }
+
+    public PlacedObject GetPlacedObject()
+    {
+        return placedObject;
+    }
+
+    // 修改：CanBuild的逻辑现在需要同时检查格子本身是否可建，以及是否已被占用
+    public bool CanBuild()
+    {
+        return isBuildable && placedObject == null;
+    }
+
+    public override string ToString()
+    {
+        return x + "," + y + (isBuildable ? " (Buildable)" : " (Not Buildable)");
+    }
+}
+
+
+--- End of .\GridObject.cs ---
+
+--- Start of .\GridSystem.cs ---
+
+using UnityEngine;
+using System.Collections.Generic;
+
+public class GridSystem
+{
+    public int width; // width * height = 格子数量
+    public int height;
+    public float cellSize; // 单个格子大小
+    private Vector3 originPosition; // 左下角格子的左下角坐标
+    private GridObject[,] gridArray;
+    private Transform gridTransform;
+
+    public GridSystem(int width, int height, float cellSize, Vector3 originPosition, Transform gridTransform, bool[,] buildableMap)
+    {
+        this.width = width;
+        this.height = height;
+        this.cellSize = cellSize;
+        this.originPosition = originPosition;
+        this.gridTransform = gridTransform;
+
+        gridArray = new GridObject[width, height];
+
+        for (int x = 0; x < gridArray.GetLength(0); x++)
+        {
+            for (int y = 0; y < gridArray.GetLength(1); y++)
+            {
+                bool isBuildable = (buildableMap != null) ? buildableMap[x, y] : true;
+                gridArray[x, y] = new GridObject(this, x, y, isBuildable);
+            }
+        }
+    }
+
+    // 将世界坐标转换为网格坐标
+    public void GetXY(Vector3 worldPosition, out int x, out int y)
+    {
+        // Convert the world position to the grid's local position
+        Vector3 localPosition = gridTransform.InverseTransformPoint(worldPosition);
+        // The rest of the calculation is now in local space
+        x = Mathf.FloorToInt((localPosition - originPosition).x / cellSize);
+        y = Mathf.FloorToInt((localPosition - originPosition).y / cellSize);
+    }
+
+    // 将网格坐标转换为世界坐标 (返回格子左下角)
+    public Vector3 GetWorldPosition(int x, int y)
+    {
+        // Calculate the position in the grid's local space first
+        Vector3 localPosition = new Vector3(x, y) * cellSize + originPosition;
+
+        // Convert the local position back to world position
+        return gridTransform.TransformPoint(localPosition);
+
+    }
+
+    // 获取指定坐标的格子对象
+    public GridObject GetGridObject(int x, int y)
+    {
+        if (x >= 0 && y >= 0 && x < width && y < height)
+        {
+            return gridArray[x, y];
+        }
+        else
+        {
+            return null;
+        }
+    }
+
+    public GridObject GetGridObject(Vector3 worldPosition)
+    {
+        GetXY(worldPosition, out int x, out int y);
+        return GetGridObject(x, y);
+    }
+
+    // 检查一个区域是否可以建造
+    public bool CanBuildArea(int startX, int startY, int areaWidth, int areaHeight)
+    {
+        for (int x = 0; x < areaWidth; x++)
+        {
+            for (int y = 0; y < areaHeight; y++)
+            {
+                GridObject gridObject = GetGridObject(startX + x, startY + y);
+                // 如果任何一个格子超出边界或不能建造，则整个区域都不能建造
+                if (gridObject == null || !gridObject.CanBuild())
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    // 放置一个建筑
+    public void PlaceObjectOnArea(int startX, int startY, int areaWidth, int areaHeight, PlacedObject placedObject)
+    {
+        for (int x = 0; x < areaWidth; x++)
+        {
+            for (int y = 0; y < areaHeight; y++)
+            {
+                GetGridObject(startX + x, startY + y)?.SetPlacedObject(placedObject);
+            }
+        }
+    }
+
+    public List<PlacedObject> GetNeighborsOfArea(int startX, int startY, int width, int height)
+    {
+        List<PlacedObject> neighbors = new List<PlacedObject>();
+        HashSet<PlacedObject> foundObjects = new HashSet<PlacedObject>(); // 用于去重
+                                                                          // 遍历区域的底部和顶部边
+        for (int x = startX; x < startX + width; x++)
+        {
+            // 底部下方
+            AddNeighbor(x, startY - 1);
+            // 顶部上方
+            AddNeighbor(x, startY + height);
+        }
+        // 遍历区域的左侧和右侧边
+        for (int y = startY; y < startY + height; y++)
+        {
+            // 左侧
+            AddNeighbor(startX - 1, y);
+            // 右侧
+            AddNeighbor(startX + width, y);
+        }
+        void AddNeighbor(int x, int y)
+        {
+            GridObject gridObject = GetGridObject(x, y);
+            if (gridObject != null)
+            {
+                PlacedObject placedObject = gridObject.GetPlacedObject();
+                // 如果邻居格子上有一个建筑，并且我们还没添加过这个建筑实例
+                if (placedObject != null && !foundObjects.Contains(placedObject))
+                {
+                    neighbors.Add(placedObject);
+                    foundObjects.Add(placedObject);
+                }
+            }
+        }
+        return neighbors;
+    }
+
+    public List<PlacedObject> GetAllPlacedObjects()
+    {
+        List<PlacedObject> placedObjects = new List<PlacedObject>();
+        HashSet<PlacedObject> foundObjects = new HashSet<PlacedObject>();
+        for (int x = 0; x < width; x++)
+        {
+            for (int y = 0; y < height; y++)
+            {
+                PlacedObject po = GetGridObject(x, y).GetPlacedObject();
+                if (po != null && !foundObjects.Contains(po))
+                {
+                    placedObjects.Add(po);
+                    foundObjects.Add(po);
+                }
+            }
+        }
+        return placedObjects;
+    }
+
+}
+
+--- End of .\GridSystem.cs ---
+
+--- Start of .\Health.cs ---
+
+// Health.cs
+using UnityEngine;
+
+public class Health : MonoBehaviour
+{
+    private float currentHealth;
+    private GameObject ruinPrefab;
+
+    public void Initialize(float maxHealth, GameObject ruinPrefab)
+    {
+        this.currentHealth = maxHealth;
+        this.ruinPrefab = ruinPrefab;
+    }
+
+    public void TakeDamage(float amount)
+    {
+        if (currentHealth <= 0) return;
+
+        currentHealth -= amount;
+        if (currentHealth <= 0)
+        {
+            Die();
+        }
+    }
+
+    private void Die()
+    {
+        // 从管理器列表中移除
+        if (TryGetComponent<MonsterAI>(out var monster))
+        {
+            FinaleManager.Instance.OnMonsterDefeated(monster);
+        }
+        else if (TryGetComponent<BuildingInstance>(out _))
+        {
+            FinaleManager.Instance.OnBuildingDestroyed(this);
+            // 如果是建筑，生成废墟
+            if (ruinPrefab != null)
+            {
+                Instantiate(ruinPrefab, transform.position, transform.rotation);
+            }
+        }
+
+        // 死亡
+        Destroy(gameObject);
+    }
+}
+
+
+--- End of .\Health.cs ---
+
+--- Start of .\IsometricSorter.cs ---
+
+// IsometricSorter.cs
+
+using UnityEngine;
+
+[RequireComponent(typeof(Renderer))]
+public class IsometricSorter : MonoBehaviour
+{
+    private Renderer spriteRenderer;
+
+    // 精度乘数。因为Y坐标是浮点数，而sortingOrder是整数。
+    // 这个值越大，Y坐标上很小的差异也能被区分开。通常100会是个不错的选择。
+    [Tooltip("精度乘数，用于将Y坐标的小数差异放大为整数。建议值为100。")]
+    [SerializeField]
+    private float precisionMultiplier = 100f;
+
+    // 是否为静态物体。如果为true，则只在开始时排序一次，以优化性能。
+    // 建筑是静态的，应该勾选此项。角色和怪物则不能。
+    [Tooltip("如果物体是静态的（如建筑），勾选此项以优化性能。脚本只会在启动时运行一次。")]
+    [SerializeField]
+    private bool isStatic = false;
+
+    [SerializeField] private int externalOffset = 0;
+
+    [SerializeField] private bool sortChildRenderers = false;
+
+    private Renderer[] childRenderers;
+
+    private void Awake()
+    {
+        // 获取SpriteRenderer组件
+        spriteRenderer = GetComponent<Renderer>();
+        if (sortChildRenderers) childRenderers = GetComponentsInChildren<Renderer>(true);
+    }
+
+    private void Start()
+    {
+        // 如果是静态物体，在游戏开始时计算一次排序顺序即可
+        if (isStatic)
+        {
+            UpdateSortOrder();
+            // 运行一次后禁用脚本，不再消耗Update资源，性能开销为零
+            this.enabled = false; 
+        }
+    }
+
+    // 使用LateUpdate确保在物体完成所有移动（在Update中完成）之后，再根据最终位置计算渲染顺序
+    private void LateUpdate()
+    {
+        // if (isStatic) return; // 双重保险
+        UpdateSortOrder();
+    }
+
+    public void UpdateSortOrder()
+    {
+        if (spriteRenderer == null) return;
+        // 核心逻辑：
+        // 1. 使用 spriteRenderer.bounds.min.y 来获取物体在世界空间中的最低点Y坐标。
+        //    这与物体的Pivot（轴心）位置无关，总是准确的。
+        // 2. 乘以精度乘数，放大差异。
+        // 3. 转换为整数。
+        // 4. 取负值。因为Y越大（越靠上）的物体，sortingOrder需要越小（越靠后）。
+        int parentOrder = -(int)(spriteRenderer.bounds.min.y * precisionMultiplier);
+        spriteRenderer.sortingOrder = parentOrder + externalOffset;
+        // 2. 如果启用了子对象排序，遍历并设置所有子渲染器
+        if (sortChildRenderers && childRenderers != null)
+        {
+            foreach (var renderer in childRenderers)
+            {
+                // 跳过自己
+                if (renderer == spriteRenderer) continue;
+
+                // 强制设置子渲染器的 sortingOrder
+                renderer.sortingOrder = parentOrder + externalOffset;
+            }
+        }
+
+    }
+
+    public void Initialize(bool isStaticObject, float precision = 100f, int offset = 0)
+    {
+        this.isStatic = isStaticObject;
+        this.precisionMultiplier = precision;
+        this.externalOffset = offset;
+
+        // 确保 Renderer 被获取
+        if (spriteRenderer == null)
+        {
+            spriteRenderer = GetComponent<Renderer>();
+        }
+
+        UpdateSortOrder(); // 立即更新一次
+        if (isStatic)
+        {
+            this.enabled = false; // 如果是静态的，禁用脚本
+        }
+    }
+
+
+    public void SetExternalOffset(int offset)
+    {
+        externalOffset = offset;
+        UpdateSortOrder();
+    }
+}
+
+
+--- End of .\IsometricSorter.cs ---
+
+--- Start of .\KiraController.cs ---
+
+// KiraController.cs (Updated for Sprite Swapping)
+using UnityEngine;
+using TMPro;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+
+public class KiraController : MonoBehaviour
+{
+    // public static KiraController Instance { get; private set; }
+    private static KiraController _instance;
+    public static KiraController Instance
+    {
+        get
+        {
+            if (_instance == null)
+            {
+                _instance = FindObjectOfType<KiraController>();
+            }
+            return _instance;
+        }
+    }
+    private SuggestionDatabase suggestionDatabase;
+
+    [Header("视觉与UI组件")]
+    [Tooltip("包含普通立绘的GameObject")]
+    [SerializeField] private GameObject normalKiraVisual; 
+    [Tooltip("包含举牌立绘和建议文本的GameObject")]
+    [SerializeField] private GameObject suggestionKiraVisual; 
+    [Tooltip("显示建议文本的TextMeshPro组件")]
+    [SerializeField] private TextMeshProUGUI suggestionText; 
+
+    [Header("系统参数")]
+    [Tooltip("基础检查间隔（秒），每隔这么久尝试触发一次通用建议")]
+    [SerializeField] private float generalCheckInterval = 30f; 
+    [Tooltip("建议显示时长（秒）")]
+    [SerializeField] private float suggestionDisplayTime = 8f;
+
+    // 内部状态
+    private Dictionary<SuggestionData, float> suggestionCooldowns = new Dictionary<SuggestionData, float>();
+    private bool isShowingSuggestion = false;
+    private float generalCheckTimer;
+
+    private void Awake()
+    {
+        if (_instance != null && _instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        _instance = this;
+        // --- 紧急修复：在这里加载资源 ---
+        suggestionDatabase = Resources.Load<SuggestionDatabase>("SuggestionDatabase"); // <-- 把 "SuggestionDatabase" 换成你的文件名
+        if (suggestionDatabase == null)
+        {
+            Debug.LogError("!!!!!!!!!! 紧急错误：无法从 Resources 文件夹加载 SuggestionDatabase！请检查文件名和位置！ !!!!!!!!!!");
+        }
+    }
+
+    private void Start()
+    {
+        // 确保游戏开始时显示的是普通立绘
+        normalKiraVisual.SetActive(true);
+        suggestionKiraVisual.SetActive(false);
+        generalCheckTimer = generalCheckInterval;
+    }
+
+    private void Update()
+    {
+        // 更新所有建议的冷却时间
+        var cooledDownSuggestions = suggestionCooldowns.Keys.ToList();
+        foreach (var suggestion in cooledDownSuggestions)
+        {
+            suggestionCooldowns[suggestion] -= Time.deltaTime;
+        }
+
+        // 如果正在显示建议或游戏不处于Normal状态，则不进行新的建议检查
+        if (isShowingSuggestion || GameManager.Instance.CurrentState != GameState.Normal)
+        {
+            return;
+        }
+
+        // 通用建议的周期性检查
+        generalCheckTimer -= Time.deltaTime;
+        if (generalCheckTimer <= 0)
+        {
+            TryShowSuggestion(SuggestionTrigger.General);
+            generalCheckTimer = generalCheckInterval;
+        }
+    }
+
+    public void TryShowSuggestion(SuggestionTrigger triggerType)
+    {
+        if (isShowingSuggestion) return;
+
+        int currentDay = GameManager.Instance.day;
+        float misleadingChance = Mathf.Clamp01((float)(currentDay - 1) / 8.0f);
+
+        List<SuggestionData> eligibleSuggestions = suggestionDatabase.allSuggestions
+            .Where(s => s.trigger == triggerType)
+            .Where(s => currentDay >= s.minDayToShow)
+            .Where(s => !suggestionCooldowns.ContainsKey(s) || suggestionCooldowns[s] <= 0)
+            .ToList();
+
+        if (eligibleSuggestions.Count == 0) return;
+
+        bool showMisleading = Random.value < misleadingChance;
+        List<SuggestionData> finalCandidates = eligibleSuggestions.Where(s => s.isMisleading == showMisleading).ToList();
+
+        if (finalCandidates.Count == 0)
+        {
+            finalCandidates = eligibleSuggestions.Where(s => s.isMisleading != showMisleading).ToList();
+        }
+        
+        if (finalCandidates.Count == 0) return;
+
+        SuggestionData selectedSuggestion = finalCandidates[Random.Range(0, finalCandidates.Count)];
+        StartCoroutine(ShowSuggestionCoroutine(selectedSuggestion));
+    }
+
+    // 显示建议的协程
+    private IEnumerator ShowSuggestionCoroutine(SuggestionData suggestion)
+    {
+        isShowingSuggestion = true;
+
+        // 1. 设置文本内容
+        suggestionText.text = suggestion.suggestionText;
+
+        // 2. 切换立绘
+        normalKiraVisual.SetActive(false);
+        suggestionKiraVisual.SetActive(true);
+
+        // 3. 等待显示时间
+        yield return new WaitForSeconds(suggestionDisplayTime);
+
+        // 4. 切换回普通立绘
+        suggestionKiraVisual.SetActive(false);
+        normalKiraVisual.SetActive(true);
+
+        // 5. 设置冷却时间并重置状态
+        suggestionCooldowns[suggestion] = suggestion.cooldown;
+        isShowingSuggestion = false;
+    }
+}
+
+
+--- End of .\KiraController.cs ---
+
+--- Start of .\LayoutBuildingInfo.cs ---
+
+// LayoutBuildingInfo.cs
+using UnityEngine;
+
+// 这个组件只在编辑器模式下有用，用来告诉布局系统这个GameObject对应哪个BuildingData
+public class LayoutBuildingInfo : MonoBehaviour
+{
+    public BuildingData buildingData;
+}
+
+
+--- End of .\LayoutBuildingInfo.cs ---
+
+--- Start of .\LayoutContainer.cs ---
+
+// LayoutContainer.cs (大幅改进)
+using UnityEngine;
+using System.Collections.Generic;
+
+public class LayoutContainer : MonoBehaviour
+{
+    // 这个字段现在不再需要了，因为我们会直接在编辑器脚本里创建GridSystem
+    // public BuildManager buildManagerPrefab; 
+
+    // 我们需要这些参数来创建自己的虚拟网格
+    [Header("Grid Configuration")]
+    public int gridWidth = 45;
+    public int gridHeight = 25;
+    public float cellSize = 1f;
+    public Vector3 gridOrigin = Vector3.zero;
+    public Transform gridTransform; // 拖入BuildManager所在的那个旋转了的GameObject
+
+    [Header("Buildable Area Source")]
+    [Tooltip("拖入定义了可建造区域的 BuildableArea 对象")]
+    public BuildableArea buildableArea;
+
+    // 编辑器模式下的虚拟网格
+    // 注意：这个grid只在编辑器脚本中使用，运行时不存在
+    [System.NonSerialized] 
+    public GridSystem editorGrid;
+
+    private void OnValidate()
+    {
+        // 当Inspector中的值改变时，重新创建虚拟网格
+        InitializeEditorGrid();
+    }
+
+    public void InitializeEditorGrid()
+    {
+        if (buildableArea == null || gridTransform == null)
+        {
+            editorGrid = null;
+            return;
+        }
+
+        // --- 模拟 BuildManager 中的 InitializeGrid 逻辑 ---
+        bool[,] buildableMap = new bool[gridWidth, gridHeight];
+        // 创建一个临时网格用于坐标转换
+        var tempGrid = new GridSystem(gridWidth, gridHeight, cellSize, gridOrigin, gridTransform, null);
+        Vector3 halfCell = gridTransform.rotation * new Vector3(cellSize, cellSize, 0) * 0.5f;
+
+        for (int x = 0; x < gridWidth; x++)
+        {
+            for (int y = 0; y < gridHeight; y++)
+            {
+                Vector3 cellCenter = tempGrid.GetWorldPosition(x, y) + halfCell;
+                buildableMap[x, y] = buildableArea.IsWorldPointInside(cellCenter);
+            }
+        }
+        
+        // 创建真正的虚拟网格，包含可建造区域信息
+        editorGrid = new GridSystem(gridWidth, gridHeight, cellSize, gridOrigin, gridTransform, buildableMap);
+    }
+}
+
+
+--- End of .\LayoutContainer.cs ---
+
+--- Start of .\LayoutData.cs ---
+
+// LayoutData.cs
+
+using UnityEngine;
+using System.Collections.Generic;
+using System.Linq;
+
+// 这是我们将在编辑器里直接填写的数据结构
+[System.Serializable]
+public class EditorLayoutEntry
+{
+    public BuildingData buildingData; // 直接引用 BuildingData，而不是用名字
+    public Vector2Int gridPosition;
+}
+
+[CreateAssetMenu(fileName = "New LayoutData", menuName = "Game/Layout Data")]
+public class LayoutData : ScriptableObject
+{
+    // 我们在 Inspector 里编辑这个列表
+    public List<EditorLayoutEntry> layoutEntries = new List<EditorLayoutEntry>();
+
+    // 这个旧的列表不再需要被直接编辑，但游戏加载逻辑会用到它
+    // [HideInInspector] 标记让它不在 Inspector 中显示
+    [HideInInspector]
+    public List<BuildingSaveData> layoutBuildings;
+
+    // 关键方法：将编辑器数据转换为运行时数据
+    public List<BuildingSaveData> GetBuildingSaveData()
+    {
+        List<BuildingSaveData> saveDataList = new List<BuildingSaveData>();
+        foreach (var entry in layoutEntries)
+        {
+            if (entry.buildingData == null) continue;
+
+            // 根据建筑类型设置合理的初始状态
+            BuildingInstance.BuildingState initialState;
+            switch (entry.buildingData.buildingType)
+            {
+                case BuildingType.Residential: initialState = BuildingInstance.BuildingState.waiting; break;
+                case BuildingType.Farmland: initialState = BuildingInstance.BuildingState.plantsRequired; break;
+                case BuildingType.Commercial: initialState = BuildingInstance.BuildingState.goodsRequired; break;
+                default: initialState = BuildingInstance.BuildingState.waiting; break;
+            }
+
+            saveDataList.Add(new BuildingSaveData
+            {
+                buildingName = entry.buildingData.name, // 运行时依然使用名字来查找
+                gridX = entry.gridPosition.x,
+                gridY = entry.gridPosition.y,
+                currentState = initialState,
+                timer = 0,
+                stockCounter = 0
+            });
+        }
+        return saveDataList;
+    }
+}
+
+
+--- End of .\LayoutData.cs ---
+
+--- Start of .\MainMenuUI.cs ---
+
+// MainMenuUI.cs
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.SceneManagement;
+using TMPro;
+
+public class MainMenuUI : MonoBehaviour
+{
+    [SerializeField] private Button continueButton;
+    // [SerializeField] private TextMeshProUGUI continueButtonText;
+    [SerializeField] private Button newGameButton;
+    [SerializeField] private string gameSceneName = "GameScene"; // 你的主游戏场景名
+
+    private void Start()
+    {
+        // 检查是否存在存档
+        if (SaveManager.HasSaveData())
+        {
+            SaveData data = SaveManager.LoadGame();
+            continueButton.interactable = true;
+            // continueButtonText.text = $"从第 {data.day} 日继续";
+        }
+        else
+        {
+            continueButton.interactable = false;
+            // 按钮文本保持默认的 "从第？日继续"
+        }
+
+        // 绑定按钮点击事件
+        continueButton.onClick.AddListener(OnContinueClick);
+        newGameButton.onClick.AddListener(OnNewGameClick);
+    }
+
+    private void OnContinueClick()
+    {
+        // 设置加载标记，然后加载游戏场景
+        GameManager.ShouldLoadGame = true;
+        GameManager.IsNewGamePlusPending = false; 
+        SceneManager.LoadScene(gameSceneName);
+    }
+
+    private void OnNewGameClick()
+    {
+        // Check for the completion flag to decide if this new game is an NG+
+        if (SaveManager.HasCompletionFlag())
+        {
+            GameManager.IsNewGamePlusPending = true;
+            Debug.Log("Completion flag found. Starting New Game+.");
+        }
+        else
+        {
+            GameManager.IsNewGamePlusPending = false;
+            Debug.Log("No completion flag. Starting a fresh game.");
+        }
+        // --- End of modification ---
+        SaveManager.DeleteSaveData();
+        GameManager.ShouldLoadGame = false;
+        SceneManager.LoadScene(gameSceneName);
+    }
+}
+
+
+--- End of .\MainMenuUI.cs ---
+
+--- Start of .\MonsterAI.cs ---
+
+// MonsterAI.cs (完整版)
+
+using UnityEngine;
+using System.Collections;
+using System.Collections.Generic;
+
+[RequireComponent(typeof(Health))]
+public class MonsterAI : MonoBehaviour
+{
+    // 怪物AI状态
+    private enum State { Seeking, Moving, Attacking, GoToSea }
+    private State currentState = State.Seeking;
+
+    [Header("AI参数")]
+    [SerializeField] private float moveSpeed = 2f;
+    
+    [Header("二周目机制")]
+    [Tooltip("怪物被净化后生成的居民Prefab")]
+    [SerializeField] private GameObject residentPrefab;
+
+    // 内部状态变量
+    private Health targetBuilding;
+    private float attackTimer;
+    private bool isExecutingAttack = false;
+
+    // --- 新增：净化相关变量 ---
+    private float purificationLevel = 0f;
+    private bool isPurified = false;
+    private SpriteRenderer spriteRenderer; // 用于净化时改变颜色
+
+    private void Awake()
+    {
+        var sorter = gameObject.AddComponent<IsometricSorter>();
+        sorter.Initialize(false); // 'false' 因为怪物是动态的
+        spriteRenderer = GetComponent<SpriteRenderer>();
+    }
+
+    void Update()
+    {
+        // 如果正在执行攻击动画或已被净化，则不执行任何逻辑
+        if (isExecutingAttack || isPurified) return;
+
+        // 检查目标建筑是否仍然存在
+        if (targetBuilding != null && (targetBuilding.gameObject == null || !targetBuilding.enabled))
+        {
+            targetBuilding = null;
+            currentState = State.Seeking;
+        }
+        
+        // AI状态机
+        switch (currentState)
+        {
+            case State.Seeking:
+                FindNearestBuilding();
+                break;
+            case State.Moving:
+                MoveToTarget();
+                break;
+            case State.Attacking:
+                AttackTarget();
+                break;
+            case State.GoToSea: // 坏结局时，走向大海
+                transform.position = Vector3.MoveTowards(transform.position, FinaleManager.Instance.seaPosition, moveSpeed * Time.deltaTime);
+                if (Vector3.Distance(transform.position, FinaleManager.Instance.seaPosition) < 1f)
+                {
+                    Destroy(gameObject); // 到达后消失
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 寻找最近的建筑作为攻击目标
+    /// </summary>
+    void FindNearestBuilding()
+    {
+        Health closest = null;
+        float minDistance = float.MaxValue;
+
+        List<Health> buildings = FinaleManager.Instance.activeBuildings;
+        if (buildings == null || buildings.Count == 0)
+        {
+            // 如果没有可攻击的建筑，原地待命
+            currentState = State.Seeking;
+            return;
+        }
+
+        // 遍历所有可攻击的建筑和塔
+        foreach(var building in buildings)
+        {
+            if (building == null) continue;
+
+            float distance = Vector3.Distance(transform.position, building.transform.position);
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closest = building;
+            }
+        }
+
+        if (closest != null)
+        {
+            targetBuilding = closest;
+            currentState = State.Moving;
+        }
+    }
+
+    /// <summary>
+    /// 向目标移动，直到进入攻击范围
+    /// </summary>
+    void MoveToTarget()
+    {
+        if (targetBuilding == null)
+        {
+            currentState = State.Seeking;
+            return;
+        }
+
+        float attackRange = 1.0f; // 近战攻击距离
+
+        float distanceToTarget = Vector3.Distance(transform.position, targetBuilding.transform.position);
+        if (distanceToTarget > attackRange)
+        {
+            transform.position = Vector3.MoveTowards(transform.position, targetBuilding.transform.position, moveSpeed * Time.deltaTime);
+        }
+        else
+        {
+            currentState = State.Attacking;
+            attackTimer = FinaleManager.Instance.monsterAttackSpeed; // 准备第一次攻击
+        }
+    }
+
+    /// <summary>
+    /// 攻击目标
+    /// </summary>
+    void AttackTarget()
+    {
+        if (targetBuilding == null)
+        {
+            currentState = State.Seeking;
+            return;
+        }
+
+        attackTimer -= Time.deltaTime;
+        if (attackTimer <= 0)
+        {
+            StartCoroutine(LungeAttackCoroutine());
+        }
+
+        // 如果目标跑出范围，回去追
+        float escapeRange = 1.2f; 
+        if (Vector3.Distance(transform.position, targetBuilding.transform.position) > escapeRange)
+        {
+            currentState = State.Moving;
+        }
+    }
+    
+    /// <summary>
+    /// 执行一个向前冲刺的攻击动画，并对目标造成伤害
+    /// </summary>
+    private IEnumerator LungeAttackCoroutine()
+    {
+        isExecutingAttack = true; // 锁定AI
+        
+        Vector3 originalPosition = transform.position;
+        
+        // 再次检查目标，防止在协程开始时目标消失
+        if (targetBuilding == null)
+        {
+            isExecutingAttack = false;
+            currentState = State.Seeking;
+            yield break;
+        }
+
+        Vector3 targetPosition = targetBuilding.transform.position;
+        Vector3 lungePosition = originalPosition + (targetPosition - originalPosition).normalized * 0.5f;
+
+        // 向前冲
+        float lungeDuration = 0.1f;
+        float timer = 0f;
+        while (timer < lungeDuration)
+        {
+            transform.position = Vector3.Lerp(originalPosition, lungePosition, timer / lungeDuration);
+            timer += Time.deltaTime;
+            yield return null;
+        }
+        transform.position = lungePosition;
+
+        // 造成伤害
+        if (targetBuilding != null)
+        {
+            targetBuilding.TakeDamage(FinaleManager.Instance.currentMonsterDamage);
+        }
+
+        yield return new WaitForSeconds(0.1f); // 短暂等待，增加打击感
+
+        // 撤回
+        float returnDuration = 0.2f;
+        timer = 0f;
+        while (timer < returnDuration)
+        {
+            transform.position = Vector3.Lerp(lungePosition, originalPosition, timer / returnDuration);
+            timer += Time.deltaTime;
+            yield return null;
+        }
+        transform.position = originalPosition;
+        
+        // 重置计时器和状态
+        attackTimer = FinaleManager.Instance.monsterAttackSpeed;
+        isExecutingAttack = false; // 解锁AI
+    }
+
+    /// <summary>
+    /// 由FinaleManager在坏结局时调用，命令怪物走向大海
+    /// </summary>
+    public void GoToSea()
+    {
+        currentState = State.GoToSea;
+    }
+
+    #region 净化逻辑
+
+    /// <summary>
+    /// 由PurificationAura调用，对怪物施加净化效果
+    /// </summary>
+    public void ApplyPurification(float amount)
+    {
+        if (isPurified) return;
+
+        purificationLevel += amount;
+        
+        // 视觉效果：怪物颜色逐渐变白
+        if (spriteRenderer != null)
+        {
+            float purityRatio = Mathf.Clamp01(purificationLevel / FinaleManager.Instance.currentMonsterHealth);
+            spriteRenderer.color = Color.Lerp(Color.white, new Color(0.8f, 1f, 0.8f, 1f), purityRatio);
+        }
+
+        // 当净化值达到其最大生命值时，触发净化
+        if (purificationLevel >= FinaleManager.Instance.currentMonsterHealth)
+        {
+            Purify();
+        }
+    }
+
+    /// <summary>
+    /// 执行净化，将怪物转变为居民
+    /// </summary>
+    private void Purify()
+    {
+        isPurified = true;
+        Debug.Log("一个怪物被净化了！转变为居民。");
+
+        // 1. 从怪物列表中移除自己
+        if (FinaleManager.Instance != null)
+        {
+            FinaleManager.Instance.OnMonsterDefeated(this);
+        }
+
+        // 2. 在当前位置生成一个居民
+        if (residentPrefab != null)
+        {
+            Instantiate(residentPrefab, transform.position, transform.rotation);
+        }
+        else
+        {
+            Debug.LogError("Resident Prefab 未在怪物上指定！无法生成居民。");
+        }
+
+        // 3. 销毁自身
+        Destroy(gameObject);
+    }
+    
+    #endregion
+}
+
+
+--- End of .\MonsterAI.cs ---
+
+--- Start of .\PlacedObject.cs ---
+
+public class PlacedObject
+{
+    private BuildingData buildingData; // 对其模板的引用
+    private int x, y;                  // 它在网格中的位置
+    public float currentHealth;
+    public int constructionStage;
+    public bool isOnFire;
+    private BuildingInstance instance;
+    public PlacedObject(BuildingData buildingData, int x, int y, BuildingInstance instance)
+    {
+        this.buildingData = buildingData;
+        this.x = x;
+        this.y = y;
+        // 初始化实例数据
+        this.currentHealth = 100f; // 假设满血
+        this.constructionStage = 0;
+        this.isOnFire = false;
+        this.instance = instance;
+    }
+    // 提供方法来获取其模板数据
+    public BuildingData GetBuildingData()
+    {
+        return buildingData;
+    }
+
+    public bool IsOrigin(int x, int y)
+    {
+        return x == this.x && y == this.y;
+    }
+    // 获取保存数据
+    public BuildingSaveData GetSaveData()
+    {
+        if (instance != null)
+        {
+            return instance.GetSaveData(x, y);
+        }
+        return null;
+    }
+
+    public int GetOriginX() { return x; }
+    public int GetOriginY() { return y; }
+
+    public BuildingInstance GetInstance()
+    {
+        return instance;
+    }
+}
+
+--- End of .\PlacedObject.cs ---
+
+--- Start of .\Projectile.cs ---
+
+// Projectile.cs
+using UnityEngine;
+
+public class Projectile : MonoBehaviour
+{
+    private Transform target;
+    private float damage;
+    private float speed = 15f;
+
+    public void Initialize(Transform target, float damage)
+    {
+        this.target = target;
+        this.damage = damage;
+        var sorter = gameObject.AddComponent<IsometricSorter>();
+        sorter.Initialize(false, 100f, 10);
+    }
+
+    void Update()
+    {
+        if (target == null)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        transform.position = Vector3.MoveTowards(transform.position, target.position, speed * Time.deltaTime);
+
+        if (Vector3.Distance(transform.position, target.position) < 0.5f)
+        {
+            if (target.TryGetComponent<Health>(out var health))
+            {
+                health.TakeDamage(damage);
+            }
+            Destroy(gameObject);
+        }
+    }
+}
+
+
+--- End of .\Projectile.cs ---
+
+--- Start of .\PurificationAura.cs ---
+
+// PurificationAura.cs
+using UnityEngine;
+
+public class PurificationAura : MonoBehaviour
+{
+    public float radius = 8f;
+    public float purificationRate = 10f; // 每秒净化量
+
+    void Update()
+    {
+        foreach (MonsterAI monster in FinaleManager.Instance.activeMonsters)
+        {
+            if (monster != null && Vector3.Distance(transform.position, monster.transform.position) <= radius)
+            {
+                monster.ApplyPurification(purificationRate * Time.deltaTime);
+            }
+        }
+    }
+}
+
+
+--- End of .\PurificationAura.cs ---
+
+--- Start of .\ResidentAI.cs ---
+
+// ResidentAI.cs
+
+using UnityEngine;
+using System.Collections;
+using System.Collections.Generic;
+
+// 确保该对象上始终有Health组件，因为居民也可能被怪物杀死
+[RequireComponent(typeof(Health))]
+public class ResidentAI : MonoBehaviour
+{
+    // 居民的AI状态
+    private enum State { Seeking, Moving, Attacking }
+    private State currentState = State.Seeking;
+
+    [Header("战斗参数")]
+    [SerializeField] private float moveSpeed = 2.5f;       // 移动速度
+    [SerializeField] private float attackRange = 1.5f;     // 攻击距离（近战）
+    [SerializeField] private float damage = 12f;           // 攻击伤害，略高于怪物
+    [SerializeField] private float attackSpeed = 1.8f;     // 攻击间隔（秒），越小越快
+
+    // 内部状态变量
+    private Health targetMonster;
+    private float attackTimer;
+    private bool isExecutingAttack = false; // 用于防止在攻击动画期间执行其他逻辑
+
+    private void Awake()
+    {
+        // 确保居民和其他动态对象一样，有正确的渲染排序
+        if (!TryGetComponent<IsometricSorter>(out _))
+        {
+            var sorter = gameObject.AddComponent<IsometricSorter>();
+            sorter.Initialize(false); // 'false' 因为居民是动态的
+        }
+    }
+    
+    private void Start()
+    {
+        // 当居民被创建时，立即向FinaleManager注册自己
+        if (FinaleManager.Instance != null)
+        {
+            FinaleManager.Instance.OnResidentCreated(this);
+        }
+        else
+        {
+            Debug.LogError("ResidentAI无法找到FinaleManager实例！");
+        }
+    }
+
+    private void OnDestroy()
+    {
+        // 当居民死亡并被销毁时，从FinaleManager注销自己
+        // 添加实例检查，防止在场景关闭时因销毁顺序问题报错
+        if (FinaleManager.Instance != null)
+        {
+            FinaleManager.Instance.OnResidentDestroyed(this);
+        }
+    }
+
+    private void Update()
+    {
+        // 如果正在播放攻击动画，则暂停所有AI逻辑
+        if (isExecutingAttack) return;
+        
+        // 检查目标是否仍然有效
+        if (targetMonster != null && (targetMonster.gameObject == null || !targetMonster.enabled))
+        {
+            targetMonster = null;
+            currentState = State.Seeking;
+        }
+
+        // 根据当前状态执行相应逻辑
+        switch (currentState)
+        {
+            case State.Seeking:
+                FindNearestMonster();
+                break;
+            case State.Moving:
+                MoveToTarget();
+                break;
+            case State.Attacking:
+                AttackTarget();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 寻找最近的怪物作为目标
+    /// </summary>
+    private void FindNearestMonster()
+    {
+        Health closest = null;
+        float minDistance = float.MaxValue;
+
+        // 从FinaleManager获取当前所有存活的怪物
+        List<MonsterAI> activeMonsters = FinaleManager.Instance.activeMonsters;
+        
+        if (activeMonsters == null || activeMonsters.Count == 0)
+        {
+            // 如果没有怪物了，就原地待命
+            currentState = State.Seeking;
+            return;
+        }
+
+        foreach (var monsterAI in activeMonsters)
+        {
+            if (monsterAI == null || !monsterAI.TryGetComponent<Health>(out var monsterHealth)) continue;
+
+            float distance = Vector3.Distance(transform.position, monsterHealth.transform.position);
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closest = monsterHealth;
+            }
+        }
+        
+        if (closest != null)
+        {
+            targetMonster = closest;
+            currentState = State.Moving;
+        }
+    }
+
+    /// <summary>
+    /// 向目标移动，直到进入攻击范围
+    /// </summary>
+    private void MoveToTarget()
+    {
+        if (targetMonster == null)
+        {
+            currentState = State.Seeking;
+            return;
+        }
+
+        float distanceToTarget = Vector3.Distance(transform.position, targetMonster.transform.position);
+        if (distanceToTarget > attackRange)
+        {
+            // 朝目标移动
+            transform.position = Vector3.MoveTowards(transform.position, targetMonster.transform.position, moveSpeed * Time.deltaTime);
+        }
+        else
+        {
+            // 已进入攻击范围，切换到攻击状态
+            currentState = State.Attacking;
+            attackTimer = attackSpeed; // 准备第一次攻击
+        }
+    }
+
+    /// <summary>
+    /// 攻击目标
+    /// </summary>
+    private void AttackTarget()
+    {
+        if (targetMonster == null)
+        {
+            currentState = State.Seeking;
+            return;
+        }
+
+        attackTimer -= Time.deltaTime;
+        if (attackTimer <= 0)
+        {
+            // 使用协程来执行带动画的攻击
+            StartCoroutine(LungeAttackCoroutine());
+        }
+
+        // 如果怪物逃出攻击范围，切换回移动状态去追击
+        float escapeRange = attackRange + 0.5f; 
+        if (Vector3.Distance(transform.position, targetMonster.transform.position) > escapeRange)
+        {
+            currentState = State.Moving;
+        }
+    }
+    
+    /// <summary>
+    /// 执行一个向前冲刺的攻击动画，并造成伤害
+    /// </summary>
+    private IEnumerator LungeAttackCoroutine()
+    {
+        isExecutingAttack = true; // 锁定AI状态
+        
+        Vector3 originalPosition = transform.position;
+
+        // 安全检查，防止目标在协程开始后瞬间消失
+        if (targetMonster == null)
+        {
+            isExecutingAttack = false;
+            yield break;
+        }
+
+        Vector3 targetPosition = targetMonster.transform.position;
+        Vector3 lungePosition = originalPosition + (targetPosition - originalPosition).normalized * 0.5f;
+
+        // --- 向前冲刺 ---
+        float lungeDuration = 0.1f;
+        float timer = 0f;
+        while (timer < lungeDuration)
+        {
+            transform.position = Vector3.Lerp(originalPosition, lungePosition, timer / lungeDuration);
+            timer += Time.deltaTime;
+            yield return null;
+        }
+        transform.position = lungePosition;
+
+        // --- 造成伤害 ---
+        if (targetMonster != null)
+        {
+            targetMonster.TakeDamage(damage);
+        }
+
+        // 短暂地停顿，增加打击感
+        yield return new WaitForSeconds(0.1f);
+
+        // --- 撤回原位 ---
+        float returnDuration = 0.2f;
+        timer = 0f;
+        // 安全检查，防止在等待期间原目标消失
+        if (targetMonster != null) lungePosition = transform.position; // 更新一下当前位置
+        while (timer < returnDuration)
+        {
+            transform.position = Vector3.Lerp(lungePosition, originalPosition, timer / returnDuration);
+            timer += Time.deltaTime;
+            yield return null;
+        }
+        transform.position = originalPosition;
+        
+        // --- 重置状态 ---
+        attackTimer = attackSpeed; // 重置攻击计时器
+        isExecutingAttack = false; // 解锁AI
+    }
+}
+
+
+--- End of .\ResidentAI.cs ---
+
+--- Start of .\SaveData.cs ---
+
+// SaveData.cs
+using System.Collections.Generic;
+
+[System.Serializable]
+public class SaveData
+{
+    public int day;
+    public int money;
+    public int goods;
+    public int population;
+    public List<BuildingSaveData> placedBuildings;
+    public List<string> unlockedBuildingNames;
+
+    public SaveData()
+    {
+        placedBuildings = new List<BuildingSaveData>();
+    }
+}
+
+[System.Serializable]
+public class BuildingSaveData
+{
+    public string buildingName; // 用于从BuildingDatabase中找回BuildingData
+    public int gridX;
+    public int gridY;
+
+    // --- 需要保存的 BuildingInstance 状态 ---
+    public BuildingInstance.BuildingState currentState;
+    public float timer;
+    public int stockCounter;
+}
+
+
+--- End of .\SaveData.cs ---
+
+--- Start of .\SaveManager.cs ---
+
+// SaveManager.cs
+using UnityEngine;
+using System.IO;
+
+public static class SaveManager
+{
+    private static readonly string saveFileName = "savegame.json";
+    private static readonly string completionFlagFile = "ngplus.unlocked";
+
+    public static string GetSaveFilePath()
+    {
+        return Path.Combine(Application.persistentDataPath, saveFileName);
+    }
+
+    private static string GetCompletionFlagPath()
+    {
+        return Path.Combine(Application.persistentDataPath, completionFlagFile);
+    }
+    // --- NEW: Method to set the completion flag ---
+    public static void SetCompletionFlag()
+    {
+        File.Create(GetCompletionFlagPath()).Dispose();
+        Debug.Log("Completion flag set. Next 'New Game' will be NG+.");
+    }
+    // --- NEW: Method to check for the completion flag ---
+    public static bool HasCompletionFlag()
+    {
+        return File.Exists(GetCompletionFlagPath());
+    }
+    // --- NEW: Method to delete the completion flag (for True Ending) ---
+    public static void DeleteCompletionFlag()
+    {
+        string path = GetCompletionFlagPath();
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+            Debug.Log("Completion flag deleted. The cycle is broken.");
+        }
+    }
+
+
+    public static void SaveGame(SaveData data)
+    {
+        string json = JsonUtility.ToJson(data, true); // true for pretty print
+        File.WriteAllText(GetSaveFilePath(), json);
+        Debug.Log("游戏已保存至: " + GetSaveFilePath());
+    }
+
+
+
+    public static SaveData LoadGame()
+    {
+        string path = GetSaveFilePath();
+        if (File.Exists(path))
+        {
+            string json = File.ReadAllText(path);
+            SaveData data = JsonUtility.FromJson<SaveData>(json);
+            Debug.Log("游戏存档已加载。");
+            return data;
+        }
+        return null;
+    }
+
+    public static bool HasSaveData()
+    {
+        return File.Exists(GetSaveFilePath());
+    }
+
+    public static void DeleteSaveData()
+    {
+        string path = GetSaveFilePath();
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+            Debug.Log("存档已删除。");
+        }
+    }
+}
+
+
+--- End of .\SaveManager.cs ---
+
+--- Start of .\SplashScreenController.cs ---
+
+// SplashScreenController.cs
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.SceneManagement;
+using System.Collections;
+
+public class SplashScreenController : MonoBehaviour
+{
+    [SerializeField]
+    private Image logoImage; // 将场景中的LogoImage拖到这里
+
+    [SerializeField]
+    private string nextSceneName = "MainMenu"; // 你的主菜单场景名字
+
+    [SerializeField]
+    private float fadeInDuration = 1.0f;
+
+    [SerializeField]
+    private float fadeOutDuration = 1.0f;
+
+    [SerializeField]
+    private float holdDuration = 1.0f; // Logo完全显示后停留的时间
+
+    void Start()
+    {
+        StartCoroutine(FadeSequence());
+    }
+
+    private IEnumerator FadeSequence()
+    {
+        // 淡入
+        yield return StartCoroutine(Fade(logoImage, 1f, fadeInDuration));
+
+        // 停留
+        yield return new WaitForSeconds(holdDuration);
+
+        // 淡出
+        yield return StartCoroutine(Fade(logoImage, 0f, fadeOutDuration));
+
+        // 加载下一个场景
+        SceneManager.LoadScene(nextSceneName);
+    }
+
+    private IEnumerator Fade(Image image, float targetAlpha, float duration)
+    {
+        float timer = 0f;
+        Color startColor = image.color;
+        Color endColor = new Color(startColor.r, startColor.g, startColor.b, targetAlpha);
+
+        while (timer < duration)
+        {
+            timer += Time.deltaTime;
+            image.color = Color.Lerp(startColor, endColor, timer / duration);
+            yield return null;
+        }
+
+        image.color = endColor;
+    }
+}
+
+
+--- End of .\SplashScreenController.cs ---
+
+--- Start of .\SuggestionData.cs ---
+
+// SuggestionData.cs
+using UnityEngine;
+
+// 定义建议的触发条件，让建议更智能
+public enum SuggestionTrigger
+{
+    // 通用类型
+    General,            // 通用建议，可随时出现
+    Idle,               // 玩家长时间无操作时
+    DayStart,           // 每日开始时
+    
+    // 资源相关
+    LowMoney,           // 钱太少时
+    LowGoods,           // 货物太少时
+    
+    // 建筑相关
+    NoFarmland,         // 没有农田时
+    NoResidential,      // 没有住宅时
+    NoCommercial,       // 没有商业建筑时
+    
+    // 二周目特殊
+    TrueBuildingPlaced  // 玩家放置了“真建筑”时
+}
+
+[CreateAssetMenu(fileName = "NewSuggestion", menuName = "Game/Suggestion Data")]
+public class SuggestionData : ScriptableObject
+{
+    [Header("核心属性")]
+    [Tooltip("如果勾选，这是一个误导玩家的伪建议")]
+    public bool isMisleading;
+
+    [TextArea(3, 5)]
+    [Tooltip("显示在牌子上的文本内容")]
+    public string suggestionText;
+
+    [Header("触发逻辑")]
+    [Tooltip("此建议最早在哪一天可以出现")]
+    public int minDayToShow = 1;
+    
+    [Tooltip("此建议的触发条件")]
+    public SuggestionTrigger trigger;
+    
+    [Tooltip("与触发条件相关的值（例如：LowMoney的阈值）")]
+    public float triggerValue;
+
+    [Header("冷却设置")]
+    [Tooltip("该建议出现后，需要等待多少秒才能再次出现")]
+    public float cooldown = 120f; // 默认2分钟冷却
+}
+
+
+--- End of .\SuggestionData.cs ---
+
+--- Start of .\SuggestionDatabase.cs ---
+
+// SuggestionDatabase.cs
+using UnityEngine;
+using System.Collections.Generic;
+
+[CreateAssetMenu(fileName = "SuggestionDatabase", menuName = "Game/Suggestion Database")]
+public class SuggestionDatabase : ScriptableObject
+{
+    public List<SuggestionData> allSuggestions = new List<SuggestionData>();
+}
+
+
+--- End of .\SuggestionDatabase.cs ---
+
+--- Start of .\TowerAI.cs ---
+
+// TowerAI.cs
+using UnityEngine;
+using System.Collections.Generic; // --- 新增引用 ---
+using System.Linq; // --- 新增引用 ---
+
+public class TowerAI : MonoBehaviour
+{
+    private Health targetMonster;
+    private float attackTimer;
+    private float attackRange = 10f;
+
+    void Update()
+    {
+        // --- 修改开始：增加对目标是否存活的更严谨判断 ---
+        // 如果目标被摧毁 (gameObject 变为 null)，或者其 Health 组件被禁用/移除
+        if (targetMonster != null && (targetMonster.gameObject == null || !targetMonster.enabled))
+        {
+            targetMonster = null;
+        }
+        // --- 修改结束 ---
+
+        if (targetMonster == null)
+        {
+            FindNearestMonster();
+        }
+        else
+        {
+            attackTimer -= Time.deltaTime;
+            if (attackTimer <= 0)
+            {
+                Shoot();
+                attackTimer = FinaleManager.Instance.towerAttackSpeed;
+            }
+            
+            // 目标跑出范围，重新寻找
+            if (Vector3.Distance(transform.position, targetMonster.transform.position) > attackRange)
+            {
+                targetMonster = null;
+            }
+        }
+    }
+
+    void FindNearestMonster()
+    {
+        // --- 修改开始：修正寻找怪物的逻辑 ---
+        Health closest = null;
+        float minDistance = attackRange; // 只在攻击范围内寻找
+
+        // 从 FinaleManager 获取当前所有存活的怪物列表
+        List<MonsterAI> activeMonsters = FinaleManager.Instance.activeMonsters;
+        
+        // 如果没有怪物，直接返回
+        if (activeMonsters == null || activeMonsters.Count == 0)
+        {
+            targetMonster = null;
+            return;
+        }
+
+        foreach (var monsterAI in activeMonsters)
+        {
+            // 确保怪物和其Health组件都有效
+            if (monsterAI == null || !monsterAI.TryGetComponent<Health>(out var monsterHealth)) continue;
+
+            float distance = Vector3.Distance(transform.position, monsterHealth.transform.position);
+            if (distance < minDistance)
+            {
+                minDistance = distance;
+                closest = monsterHealth;
+            }
+        }
+        
+        targetMonster = closest;
+        // --- 修改结束 ---
+    }
+
+    void Shoot()
+    {
+        // --- 修改开始：修正获取子弹脚本的方式 ---
+        if (targetMonster == null) return; // 安全检查
+
+        GameObject projGO = Instantiate(FinaleManager.Instance.projectilePrefab, transform.position, Quaternion.identity);
+        
+        // 使用 GetComponent 而不是 AddComponent
+        Projectile projectile = projGO.GetComponent<Projectile>();
+        if (projectile != null)
+        {
+            projectile.Initialize(targetMonster.transform, FinaleManager.Instance.towerDamage);
+        }
+        else
+        {
+            // 如果Prefab上没有挂脚本，这是一个备用方案，但强烈建议在编辑器里挂好
+            Debug.LogError("子弹Prefab上没有找到Projectile脚本，正在动态添加！");
+            projectile = projGO.AddComponent<Projectile>();
+            projectile.Initialize(targetMonster.transform, FinaleManager.Instance.towerDamage);
+        }
+        // --- 修改结束 ---
+    }
+}
+
+
+--- End of .\TowerAI.cs ---
+
+--- Start of .\UIManager.cs ---
+
+// UIManager.cs
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+using System.Collections;
+
+public class UIManager : MonoBehaviour
+{
+    public static UIManager Instance { get; private set; }
+
+    // 【改动】将这些UI元素的直接引用设为私有或移除，因为我们将通过父对象控制它们
+    [SerializeField] private TextMeshProUGUI moneyText;
+    [SerializeField] private TextMeshProUGUI goodsText;
+    [SerializeField] private TextMeshProUGUI dayText;
+    [SerializeField] public Image fadeScreen;
+    [SerializeField] private GameObject overlayMask;
+    [SerializeField] private BuildMenuUI buildMenuUI;
+
+    // 【新增】用于控制所有游戏内UI的父对象
+    [Header("UI Parents")]
+    [SerializeField] private GameObject inGameUIParent;
+    [SerializeField] private GameObject rootCanvasObject; // 保持这个，用于FadeScreen的检查
+
+    private void Awake()
+    {
+        if (Instance != null)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
+
+        if (rootCanvasObject == null)
+        {
+            Debug.LogError("致命错误: UIManager上的 'Root Canvas Object' 字段没有被指定！");
+        }
+        if (inGameUIParent == null)
+        {
+            Debug.LogError("致命错误: UIManager上的 'In Game UI Parent' 字段没有被指定！请参考文档设置。");
+        }
+    }
+
+    private void OnEnable()
+    {
+        GameManager.OnDayStart += HandleDayStart;
+    }
+
+    private void OnDisable()
+    {
+        GameManager.OnDayStart -= HandleDayStart;
+    }
+
+    private void HandleDayStart(int newDay)
+    {
+        dayText.text = $"第{newDay}日";
+    }
+
+    // 【新增】显示游戏UI
+    public void ShowInGameUI()
+    {
+        if (inGameUIParent != null) inGameUIParent.SetActive(true);
+    }
+
+    // 【新增】隐藏游戏UI
+    public void HideInGameUI()
+    {
+        if (inGameUIParent != null) inGameUIParent.SetActive(false);
+    }
+
+    public void ShowOverlay()
+    {
+        if (overlayMask != null) overlayMask.SetActive(true);
+    }
+    public void HideOverlay()
+    {
+        if (overlayMask != null) overlayMask.SetActive(false);
+    }
+
+    public void UpdateAllDisplays(int money, int goods)
+    {
+        moneyText.text = $"{money}";
+        goodsText.text = $"{goods}";
+    }
+
+    public IEnumerator FadeScreen(bool toBlack, float duration)
+    {
+        if (fadeScreen == null) yield break;
+        if (rootCanvasObject != null && !rootCanvasObject.activeInHierarchy)
+        {
+            rootCanvasObject.SetActive(true);
+        }
+
+        float timer = 0f;
+        Color startColor = fadeScreen.color;
+        Color endColor = toBlack ? Color.black : Color.clear;
+        fadeScreen.raycastTarget = true; 
+
+        while (timer < duration)
+        {
+            timer += Time.unscaledDeltaTime; 
+            fadeScreen.color = Color.Lerp(startColor, endColor, timer / duration);
+            yield return null;
+        }
+
+        fadeScreen.color = endColor;
+        if (!toBlack)
+        {
+            fadeScreen.raycastTarget = false;
+        }
+    }
+
+    public void onBuildButtonClicked()
+    {
+        if (buildMenuUI != null) buildMenuUI.ToggleMenu();
+    }
+
+    public void HideGameUIForFinale()
+    {
+        // 【改动】现在这个方法只调用通用的隐藏方法
+        HideInGameUI();
+    }
+}
+
+
+--- End of .\UIManager.cs ---
+
+--- Start of .\UnlockManager.cs ---
+
+// UnlockManager.cs
+using UnityEngine;
+using System.Collections.Generic;
+using System.Linq;
+
+public class UnlockManager : MonoBehaviour
+{
+    // public static UnlockManager Instance { get; private set; }
+    private static UnlockManager _instance;
+    public static UnlockManager Instance
+    {
+        get
+        {
+            if (_instance == null)
+            {
+                _instance = FindObjectOfType<UnlockManager>();
+            }
+            return _instance;
+        }
+    }
+    [SerializeField] private BuildingDatabase buildingDatabase;
+    private HashSet<string> unlockedBuildings = new HashSet<string>();
+    private List<BuildingData> runtimeTrueBuildings = new List<BuildingData>();
+
+    private void Awake()
+    {
+        if (_instance != null && _instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        _instance = this;
+    }
+
+    private void OnEnable()
+    {
+        GameManager.OnDayStart += CheckForUnlocks;
+    }
+
+    private void OnDisable()
+    {
+        GameManager.OnDayStart -= CheckForUnlocks;
+    }
+
+    // 每天开始时调用，检查是否有新的建筑需要解锁
+    public void CheckForUnlocks(int currentDay)
+    {
+        if (buildingDatabase == null) return;
+        foreach (var building in buildingDatabase.allBuildings)
+        {
+            if (currentDay >= building.unlockDay && !IsUnlocked(building.name))
+            {
+                UnlockBuilding(building.name);
+                
+                // 【修改】 增加建筑类型判断：只为住宅和商业建筑生成真建筑
+                if (GameManager.Instance.isNewGamePlus && !building.isTrueVersion && !building.isSpecialReplacement)
+                {
+                    if (building.buildingType == BuildingType.Residential || building.buildingType == BuildingType.Commercial)
+                    {
+                        GenerateAndUnlockTrueVersion(building);
+                    }
+                }
+            }
+        }
+    }
+
+    private void GenerateAndUnlockTrueVersion(BuildingData original)
+    {
+        // Instantiate a copy in memory
+        BuildingData trueVersion = Instantiate(original);
+        // Modify it to be the 'True' version
+        trueVersion.name = original.name + "_True"; // Unique name for the HashSet
+        trueVersion.isTrueVersion = true;
+        // Store it
+        runtimeTrueBuildings.Add(trueVersion);
+        // Unlock it
+        UnlockBuilding(trueVersion.name);
+        Debug.Log($"<color=magenta>为 {original.buildingType} 类建筑 '{original.name}' 生成并解锁了真建筑版本。</color>");
+    }
+    
+    // --- NEW: Public method for the UI to get the generated true buildings ---
+    public List<BuildingData> GetUnlockedTrueBuildingsForCategory(BuildingType category)
+    {
+        return runtimeTrueBuildings
+            .Where(b => b.buildingType == category && IsUnlocked(b.name))
+            .ToList();
+    }
+
+
+    // 供UI查询某个建筑是否已解锁
+    public bool IsUnlocked(string buildingName)
+    {
+        return unlockedBuildings.Contains(buildingName);
+    }
+    
+    // 解锁一个建筑
+    private void UnlockBuilding(string buildingName)
+    {
+        if (unlockedBuildings.Add(buildingName))
+        {
+            Debug.Log($"<color=cyan>建筑已解锁: {buildingName}</color>");
+            // 你可以在这里触发一个事件，让UI显示解锁动画等
+        }
+    }
+
+    // 清空所有解锁状态（用于开始新游戏）
+    public void ResetUnlocks()
+    {
+        unlockedBuildings.Clear();
+        runtimeTrueBuildings.Clear();
+        Debug.Log("所有建筑解锁状态已重置。");
+    }
+
+    // 从存档数据加载解锁状态
+    public void LoadFromSave(List<string> unlockedNames)
+    {
+        unlockedBuildings = new HashSet<string>(unlockedNames);
+        Debug.Log($"已从存档加载 {unlockedBuildings.Count} 个已解锁建筑。");
+    }
+
+    // 获取要保存的解锁状态
+    public List<string> GetSaveData()
+    {
+        return unlockedBuildings.ToList();
+    }
+}
+
+
+--- End of .\UnlockManager.cs ---
+

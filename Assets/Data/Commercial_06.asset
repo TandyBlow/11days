@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: add7d11474ef3e240861a722ee82429f, type: 3}
+  m_Name: Commercial_06
+  m_EditorClassIdentifier: 
+  buildingName: "\u5927\u5E97"
+  prefab: {fileID: 7600526703061443674, guid: d4184c643316b1c44ad7129f4af9a37a, type: 3}
+  cost: 9000
+  width: 4
+  height: 4
+  buildingType: 2
+  rewards: 12000
+  rewardsTime: 0
+  population: 0
+  goodsNeeded: 100
+  unlockDay: 8
+  isTrueVersion: 0
+  isSpecialReplacement: 0

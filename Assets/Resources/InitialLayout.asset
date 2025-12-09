@@ -1,0 +1,112 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7f497ade66229834e8c35185e7adbccd, type: 3}
+  m_Name: InitialLayout
+  m_EditorClassIdentifier: 
+  layoutEntries:
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 7, y: 32}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 9, y: 32}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 11, y: 32}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 13, y: 32}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 15, y: 32}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 17, y: 32}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 19, y: 32}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 21, y: 32}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 23, y: 32}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 25, y: 32}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 25, y: 34}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 23, y: 34}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 21, y: 34}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 19, y: 34}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 17, y: 34}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 15, y: 34}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 13, y: 34}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 11, y: 34}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 9, y: 34}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 7, y: 34}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 25, y: 36}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 25, y: 28}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 25, y: 38}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 27, y: 38}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 29, y: 38}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 31, y: 38}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 33, y: 38}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 35, y: 38}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 35, y: 36}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 35, y: 34}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 35, y: 32}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 35, y: 30}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 35, y: 28}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 33, y: 28}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 31, y: 28}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 29, y: 28}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 27, y: 28}
+  - buildingData: {fileID: 11400000, guid: c12774ed909ba5a42a6c2c7b562c005b, type: 2}
+    gridPosition: {x: 25, y: 30}
+  - buildingData: {fileID: 11400000, guid: e515e9045c775484eb2f4c92561580a7, type: 2}
+    gridPosition: {x: 27, y: 30}
+  - buildingData: {fileID: 11400000, guid: aa58246d25be65d42aa162d92502631f, type: 2}
+    gridPosition: {x: 7, y: 46}
+  - buildingData: {fileID: 11400000, guid: aa58246d25be65d42aa162d92502631f, type: 2}
+    gridPosition: {x: 11, y: 46}
+  - buildingData: {fileID: 11400000, guid: aa58246d25be65d42aa162d92502631f, type: 2}
+    gridPosition: {x: 11, y: 50}
+  - buildingData: {fileID: 11400000, guid: aa58246d25be65d42aa162d92502631f, type: 2}
+    gridPosition: {x: 7, y: 50}
+  - buildingData: {fileID: 11400000, guid: 8e0f6df84856eeb419b8cecaeedb5867, type: 2}
+    gridPosition: {x: 13, y: 36}
+  - buildingData: {fileID: 11400000, guid: 8e0f6df84856eeb419b8cecaeedb5867, type: 2}
+    gridPosition: {x: 15, y: 36}
+  - buildingData: {fileID: 11400000, guid: 8e0f6df84856eeb419b8cecaeedb5867, type: 2}
+    gridPosition: {x: 17, y: 36}
+  - buildingData: {fileID: 11400000, guid: f80db24874297e84f9e9efed6c871ab4, type: 2}
+    gridPosition: {x: 13, y: 28}
+  - buildingData: {fileID: 11400000, guid: f80db24874297e84f9e9efed6c871ab4, type: 2}
+    gridPosition: {x: 19, y: 28}
+  layoutBuildings: []

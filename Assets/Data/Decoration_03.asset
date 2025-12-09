@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: add7d11474ef3e240861a722ee82429f, type: 3}
+  m_Name: Decoration_03
+  m_EditorClassIdentifier: 
+  buildingName: "\u6D77\u6D0B\u4E4B\u5FC3"
+  prefab: {fileID: 1433925986243035207, guid: 709cc744d9fde88459e924c56aa2dcb7, type: 3}
+  cost: 10000
+  width: 8
+  height: 8
+  buildingType: 3
+  rewards: 0
+  rewardsTime: 0
+  population: 0
+  goodsNeeded: 0
+  unlockDay: 9
+  isTrueVersion: 0
+  isSpecialReplacement: 1

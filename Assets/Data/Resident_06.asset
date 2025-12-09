@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: add7d11474ef3e240861a722ee82429f, type: 3}
+  m_Name: Resident_06
+  m_EditorClassIdentifier: 
+  buildingName: "\u5927\u8C6A\u65AF"
+  prefab: {fileID: 3814019397099734279, guid: 4556a6009d7f62e47a6c597db306301d, type: 3}
+  cost: 8000
+  width: 4
+  height: 4
+  buildingType: 0
+  rewards: 700
+  rewardsTime: 20
+  population: 120
+  goodsNeeded: 0
+  unlockDay: 9
+  isTrueVersion: 0
+  isSpecialReplacement: 0
