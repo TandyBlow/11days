@@ -99,8 +99,17 @@ public class BuildMenuUI : MonoBehaviour
         // 3. 默认选中并显示第一个选项卡的内容
         if (tabs.Count > 0)
         {
-            tabs[0].Toggle.isOn = true;
-            // OnTabSelected 会被上面的isOn=true自动触发
+            if (tabs[0].Toggle.isOn)
+            {
+                // Toggle 已经是 on 时不会再触发 onValueChanged，
+                // 必须手动刷新一次：否则重新打开菜单时列表还停留在我上一次的可购买状态，
+                // 钱变多了按钮仍然是灰的。
+                OnTabSelected(tabs[0]);
+            }
+            else
+            {
+                tabs[0].Toggle.isOn = true; // 会触发 OnTabSelected
+            }
         }
 
         // 4. 执行滑入动画
@@ -195,8 +204,16 @@ public class BuildMenuUI : MonoBehaviour
 
     private void PopulateBuildingList(BuildingType category)
     {
-        foreach (Transform child in contentParent)
+        // 先把旧项收集出来再处理：SetParent 会改变正在遍历的子节点集合，
+        // 直接在 foreach 里 SetParent 会跳过元素，导致旧项没被销毁、列表越堆越多。
+        List<Transform> oldItems = new List<Transform>();
+        foreach (Transform child in contentParent) oldItems.Add(child);
+
+        foreach (Transform child in oldItems)
         {
+            // 先脱离父级再销毁：Destroy 要到帧末才生效，
+            // 否则 LayoutGroup 会在本帧把“已删除的旧项 + 新项”一起排版，出现一帧错位。
+            child.SetParent(null, false);
             Destroy(child.gameObject);
         }
         // 1. Get normal unlocked buildings from the database
@@ -213,10 +230,6 @@ public class BuildMenuUI : MonoBehaviour
         // 3. Instantiate UI items for the combined list
         foreach (BuildingData data in buildingsToShow)
         {
-            // Filter out the original versions of special replacement buildings if their replacement is unlocked
-            // (e.g., Don't show "Fountain" if "Heart of the Ocean" is available)
-            // This is an optional refinement, but good practice.
-            if (data.name == "Fountain" && UnlockManager.Instance.IsUnlocked("海洋之心")) continue;
             GameObject itemGO = Instantiate(buildingListItemPrefab, contentParent);
             BuildingListItemUI itemUI = itemGO.GetComponent<BuildingListItemUI>();
             if (itemUI != null)

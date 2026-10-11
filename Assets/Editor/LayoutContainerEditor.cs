@@ -205,7 +205,8 @@ public class LayoutContainerEditor : Editor
         UpdateGridWithObjects();
         grid = container.editorGrid;
 
-        List<BuildingSaveData> buildingsData = new List<BuildingSaveData>();
+        // 只保存“建筑引用 + 网格坐标”：初始状态由 LayoutData.GetBuildingSaveData() 在运行时推导
+        List<EditorLayoutEntry> layoutEntries = new List<EditorLayoutEntry>();
         bool hasInvalidPlacement = false;
 
         foreach (Transform child in container.transform)
@@ -223,26 +224,11 @@ public class LayoutContainerEditor : Editor
                 continue; // 跳过这个非法的建筑
             }
 
-            // 根据建筑类型设置合理的初始状态
-            BuildingInstance.BuildingState initialState;
-            switch (info.buildingData.buildingType)
+            layoutEntries.Add(new EditorLayoutEntry
             {
-                case BuildingType.Residential: initialState = BuildingInstance.BuildingState.waiting; break;
-                case BuildingType.Farmland: initialState = BuildingInstance.BuildingState.plantsRequired; break;
-                case BuildingType.Commercial: initialState = BuildingInstance.BuildingState.goodsRequired; break;
-                default: initialState = BuildingInstance.BuildingState.waiting; break;
-            }
-
-            BuildingSaveData saveData = new BuildingSaveData
-            {
-                buildingName = info.buildingData.name,
-                gridX = x,
-                gridY = y,
-                currentState = initialState,
-                timer = 0,
-                stockCounter = 0
-            };
-            buildingsData.Add(saveData);
+                buildingData = info.buildingData,
+                gridPosition = new Vector2Int(x, y)
+            });
         }
 
         if (hasInvalidPlacement)
@@ -251,7 +237,7 @@ public class LayoutContainerEditor : Editor
             return;
         }
 
-        if (buildingsData.Count == 0)
+        if (layoutEntries.Count == 0)
         {
             EditorUtility.DisplayDialog("Warning", "在容器下没有找到任何有效的建筑来保存。", "OK");
             return;
@@ -259,7 +245,7 @@ public class LayoutContainerEditor : Editor
 
         // --- 后续的保存资产文件逻辑 ---
         LayoutData newLayout = ScriptableObject.CreateInstance<LayoutData>();
-        newLayout.layoutBuildings = buildingsData;
+        newLayout.layoutEntries = layoutEntries;
         
         string path = EditorUtility.SaveFilePanelInProject(
             "Save Layout Asset",

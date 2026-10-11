@@ -4,6 +4,10 @@ using System.Collections.Generic;
 [System.Serializable]
 public class SaveData
 {
+    // 存档格式版本。以后改动字段语义时用它做迁移判断，现在只是写入。
+    public const int CurrentVersion = 1;
+
+    public int version = CurrentVersion;
     public int day;
     public int money;
     public int goods;

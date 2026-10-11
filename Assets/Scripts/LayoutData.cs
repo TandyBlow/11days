@@ -15,13 +15,10 @@ public class EditorLayoutEntry
 [CreateAssetMenu(fileName = "New LayoutData", menuName = "Game/Layout Data")]
 public class LayoutData : ScriptableObject
 {
-    // 我们在 Inspector 里编辑这个列表
+    // 编辑器里填写、运行时读取的唯一数据源。
+    // 注意：旧的 layoutBuildings 字段已删除——以前两个布局工具往里写、游戏却只读 layoutEntries，
+    // 结果是“保存成功但加载 0 栋建筑”。
     public List<EditorLayoutEntry> layoutEntries = new List<EditorLayoutEntry>();
-
-    // 这个旧的列表不再需要被直接编辑，但游戏加载逻辑会用到它
-    // [HideInInspector] 标记让它不在 Inspector 中显示
-    [HideInInspector]
-    public List<BuildingSaveData> layoutBuildings;
 
     // 关键方法：将编辑器数据转换为运行时数据
     public List<BuildingSaveData> GetBuildingSaveData()

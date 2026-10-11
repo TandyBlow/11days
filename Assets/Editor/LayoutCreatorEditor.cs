@@ -1,6 +1,7 @@
 // LayoutCreatorEditor.cs
 using UnityEngine;
 using UnityEditor;
+using System.Collections.Generic;
 using System.IO;
 
 public class LayoutCreatorEditor
@@ -24,9 +25,33 @@ public class LayoutCreatorEditor
             return;
         }
 
+        // 转换为 LayoutData 真正使用的 layoutEntries。
+        // 以前写的是没人读的 layoutBuildings，结果“保存成功”的布局加载出来是 0 栋建筑。
+        List<EditorLayoutEntry> layoutEntries = new List<EditorLayoutEntry>();
+        foreach (var building in buildingsData)
+        {
+            BuildingData data = BuildManager.Instance.FindBuildingData(building.buildingName);
+            if (data == null)
+            {
+                Debug.LogWarning($"导出布局时跳过 '{building.buildingName}'：找不到对应的 BuildingData。");
+                continue;
+            }
+            layoutEntries.Add(new EditorLayoutEntry
+            {
+                buildingData = data,
+                gridPosition = new Vector2Int(building.gridX, building.gridY)
+            });
+        }
+
+        if (layoutEntries.Count == 0)
+        {
+            EditorUtility.DisplayDialog("Warning", "没有可导出的建筑数据。", "OK");
+            return;
+        }
+
         // 创建一个新的 LayoutData ScriptableObject 实例
         LayoutData newLayout = ScriptableObject.CreateInstance<LayoutData>();
-        newLayout.layoutBuildings = buildingsData;
+        newLayout.layoutEntries = layoutEntries;
 
         // 弹出保存文件对话框
         string path = EditorUtility.SaveFilePanelInProject(

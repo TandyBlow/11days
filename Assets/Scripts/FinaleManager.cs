@@ -229,7 +229,19 @@ public class FinaleManager : MonoBehaviour
             Vector3 finalPos = basePos + new Vector3(Random.Range(-0.5f, 0.5f), Random.Range(-0.5f, 0.5f), 0);
 
             GameObject monsterGO = Instantiate(monsterPrefab, finalPos, Quaternion.identity);
-            monsterGO.AddComponent<Health>().Initialize(currentMonsterHealth, null);
+
+            // 复用 Prefab 上已有的 Health，只有缺失时才补一个。
+            // 不能无条件 AddComponent：Monster.prefab 自身已带 Health，再加一个会得到两个 Health，
+            // 而所有伤害来源（TowerAI/ResidentAI/Projectile）用 TryGetComponent<Health>() 取到的是
+            // 组件列表里靠前的那个（Prefab 上的、从未 Initialize、血量恒为 0），TakeDamage 会被直接 return，
+            // 导致怪物无法被击杀。
+            Health monsterHealth;
+            if (!monsterGO.TryGetComponent(out monsterHealth))
+            {
+                monsterHealth = monsterGO.AddComponent<Health>();
+            }
+            monsterHealth.Initialize(currentMonsterHealth, null);
+
             MonsterAI monsterAI = monsterGO.GetComponent<MonsterAI>();
             activeMonsters.Add(monsterAI);
         }

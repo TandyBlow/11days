@@ -13,6 +13,7 @@ public class ResidentAI : MonoBehaviour
     private State currentState = State.Seeking;
 
     [Header("战斗参数")]
+    [SerializeField] private float maxHealth = 100f;       // 生命值，Health 需要运行时显式初始化
     [SerializeField] private float moveSpeed = 2.5f;       // 移动速度
     [SerializeField] private float attackRange = 1.5f;     // 攻击距离（近战）
     [SerializeField] private float damage = 12f;           // 攻击伤害，略高于怪物
@@ -25,6 +26,13 @@ public class ResidentAI : MonoBehaviour
 
     private void Awake()
     {
+        // Health 必须在这里显式初始化：它默认 currentHealth = 0，
+        // 而 Health.TakeDamage 在 currentHealth <= 0 时会直接 return（等于居民永远无敌）。
+        if (TryGetComponent(out Health health))
+        {
+            health.Initialize(maxHealth, null);
+        }
+
         // 确保居民和其他动态对象一样，有正确的渲染排序
         if (!TryGetComponent<IsometricSorter>(out _))
         {

@@ -12,7 +12,6 @@ public class BuildingInstance : MonoBehaviour
     private GameObject interactionBubble; // 在Prefab中将小泡泡对象拖到这里
     private SpriteRenderer buildingRenderer;
     private SpriteRenderer bubbleRenderer;
-    private IsometricSorter buildingSorter;
 
     [Header("泡泡图标")]
     [Tooltip("需要补货时显示的图标")]
@@ -42,7 +41,6 @@ public class BuildingInstance : MonoBehaviour
         this.buildingData = data;
         
         buildingRenderer = GetComponent<SpriteRenderer>();
-        buildingSorter = GetComponent<IsometricSorter>();
         if (interactionBubble != null)
         {
             bubbleRenderer = interactionBubble.GetComponent<SpriteRenderer>();
@@ -80,7 +78,8 @@ public class BuildingInstance : MonoBehaviour
         switch (buildingData.buildingType)
         {
             case BuildingType.Residential:
-                GameManager.Instance.AddPopulation(buildingData.population);
+                // 人口不在这里累加：加载布局/读档时 Initialize 会被重复调用，会导致人口翻倍。
+                // 人口统一由 GameManager.RecalculatePopulation() 按网格上的住宅建筑推导。
                 ChangeState(BuildingState.waiting);
                 break;
             case BuildingType.Farmland:
@@ -102,6 +101,9 @@ public class BuildingInstance : MonoBehaviour
 
     private void Update()
     {
+        // 没被 Initialize 过的实例（例如只作为标记的喷泉对象）不执行任何逻辑
+        if (buildingData == null) return;
+
         // 农田的生长逻辑独立处理
         if (buildingData.buildingType == BuildingType.Farmland)
         {
@@ -138,11 +140,12 @@ public class BuildingInstance : MonoBehaviour
     private void LateUpdate()
     {
         // 只要泡泡是激活的，就每帧强制更新它的 sortingOrder
-        if (interactionBubble != null && interactionBubble.activeSelf && bubbleRenderer != null && buildingSorter != null)
+        if (interactionBubble != null && interactionBubble.activeSelf && bubbleRenderer != null && buildingRenderer != null)
         {
             // 核心逻辑：直接读取建筑的sortingOrder，然后+1
             // 这就绕过了所有复杂的计算，直接拿结果
-            bubbleRenderer.sortingOrder = buildingSorter.GetComponent<Renderer>().sortingOrder + 1;
+            // （用 Initialize 中缓存的 buildingRenderer，避免每帧 GetComponent）
+            bubbleRenderer.sortingOrder = buildingRenderer.sortingOrder + 1;
         }
     }
 
@@ -328,9 +331,12 @@ public class BuildingInstance : MonoBehaviour
 
     public void RestoreState(BuildingSaveData data)
     {
+        // 顺序很重要：ChangeState 会把 timer / stockCounter 重置成该状态的初始值
+        // （农田的生长计时、商业的库存），所以必须先用存档值完成状态切换，再用存档值覆盖，
+        // 否则读档后农田会重新开始生长、商业库存会回满（等于把玩家付的货退回去）。
+        ChangeState(data.currentState);
         this.timer = data.timer;
         this.stockCounter = data.stockCounter;
-        ChangeState(data.currentState);
     }
 
     public BuildingSaveData GetSaveData(int gridX, int gridY)

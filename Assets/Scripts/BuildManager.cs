@@ -195,6 +195,18 @@ public class BuildManager : MonoBehaviour
     // 在指定网格坐标放置建筑
     private void PlaceBuilding(int startX, int startY)
     {
+        if (selectedBuilding == null) return;
+
+        // 建造前校验余额。以前是直接 AddMoney(-cost) 再由 GameManager 把负数夹到 0，
+        // 相当于钱不够也能白拿建筑。
+        if (GameManager.Instance.money < selectedBuilding.cost)
+        {
+            Debug.LogWarning($"金钱不足，无法建造 {selectedBuilding.name}：需要 {selectedBuilding.cost}，当前 {GameManager.Instance.money}。");
+            ExitBuildMode();
+            GameManager.Instance.RequestEnterNormalMode();
+            return;
+        }
+
         // 这个点就是 (startX, startY) 格子的左下角顶点
         Vector3 placementPosition = grid.GetWorldPosition(startX, startY);
         // 实例化建筑，它的Pivot(底部中心)会被精确地放置在 placementPosition 上
@@ -216,6 +228,8 @@ public class BuildManager : MonoBehaviour
         {
             buildingInstance.UpdateRoadConnectionStatus();
         }
+        // 新建筑可能改变人口（住宅），统一按网格重算
+        GameManager.Instance.RecalculatePopulation();
         // 2. 如果新放置的是道路，则通知其所有邻居更新状态
         if (selectedBuilding.buildingType == BuildingType.Road)
         {
@@ -240,12 +254,24 @@ public class BuildManager : MonoBehaviour
         }
     }
 
-    // 设置当前要建造的建筑类型
+    // 在建造模式中换选建筑（GameManager 在已经处于建造模式时会调用）
     public void SetSelectedBuilding(BuildingData buildingData)
     {
+        if (buildingData == null) return;
+
         this.selectedBuilding = buildingData;
-        Debug.Log($"选择了建筑: {selectedBuilding.name}");
-        
+        Debug.Log($"换选建筑: {selectedBuilding.name}");
+
+        if (isInBuildMode)
+        {
+            // 丢掉上一栋的预览，并把网格重新显示出来
+            if (previewObject != null)
+            {
+                Destroy(previewObject);
+                previewObject = null;
+            }
+            ShowGridVisual();
+        }
     }
 
     private void HandleGameStateChange(GameState state)
@@ -429,15 +455,31 @@ public class BuildManager : MonoBehaviour
 
     public void LoadBuildingsFromSave(List<BuildingSaveData> buildingsData)
     {
+        if (buildingsData == null)
+        {
+            Debug.LogWarning("读档数据为空，跳过建筑加载。");
+            ClearAllBuildings();
+            return;
+        }
+
         ClearAllBuildings();
         List<BuildingInstance> allLoadedInstances = new List<BuildingInstance>();
         foreach (var data in buildingsData)
         {
-            Debug.Log("1");
-            BuildingData buildingData = buildingDatabase.allBuildings.FirstOrDefault(b => b.name == data.buildingName);
+            BuildingData buildingData = FindBuildingData(data.buildingName);
             if (buildingData == null)
             {
                 Debug.LogError($"无法从存档加载建筑，找不到名为 '{data.buildingName}' 的BuildingData！");
+                continue;
+            }
+
+            // 越界坐标以前会被静默忽略：对象实例化了却没登记到网格上，于是看不见、不能修路，
+            // 下次存档还会被丢掉。这里直接跳过并报警，避免出现“幽灵建筑”。
+            if (data.gridX < 0 || data.gridY < 0 ||
+                data.gridX + buildingData.width > gridWidth || data.gridY + buildingData.height > gridHeight)
+            {
+                Debug.LogWarning($"存档中的建筑 '{data.buildingName}' 坐标 ({data.gridX},{data.gridY}) " +
+                                 $"超出 {gridWidth}x{gridHeight} 网格范围，已跳过。");
                 continue;
             }
 
@@ -463,7 +505,27 @@ public class BuildManager : MonoBehaviour
             grid.PlaceObjectOnArea(data.gridX, data.gridY, buildingData.width, buildingData.height,
                 new PlacedObject(buildingData, data.gridX, data.gridY, buildingInstance));
         }
+        // 先按网格上的住宅重算人口，再更新道路连接
+        GameManager.Instance.RecalculatePopulation();
         StartCoroutine(UpdateAllConnectionsAfterLoad(allLoadedInstances));
+    }
+
+    /// <summary>
+    /// 按存档里的名字找 BuildingData。
+    /// 二周目的“真建筑”是运行时 Instantiate 出来的克隆（名字形如 "&lt;原名&gt;_True"），
+    /// 并不在 buildingDatabase 里，需要向 UnlockManager 索取。
+    /// </summary>
+    public BuildingData FindBuildingData(string buildingName)
+    {
+        if (string.IsNullOrEmpty(buildingName)) return null;
+
+        if (buildingDatabase != null)
+        {
+            BuildingData direct = buildingDatabase.allBuildings.FirstOrDefault(b => b != null && b.name == buildingName);
+            if (direct != null) return direct;
+        }
+
+        return UnlockManager.Instance != null ? UnlockManager.Instance.GetTrueVersionByName(buildingName) : null;
     }
 
     private void ClearAllBuildings()

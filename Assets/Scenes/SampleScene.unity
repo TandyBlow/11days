@@ -2897,13 +2897,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8568aeae1516f5e48a23681c4bf51475, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  day: 4
-  dayDuration: 1
-  transDuration: 1
-  flashDuration: 10
-  population: 1
-  money: 220
-  goods: 20
+  day: 1
+  dayDuration: 300
+  transDuration: 15
+  flashDuration: 3
+  population: 0
+  money: 100
+  goods: 50
   uiManager: {fileID: 1523915121}
   worldRoot: {fileID: 1595284253}
 --- !u!1 &1021044595

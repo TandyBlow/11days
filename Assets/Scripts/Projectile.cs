@@ -11,7 +11,12 @@ public class Projectile : MonoBehaviour
     {
         this.target = target;
         this.damage = damage;
-        var sorter = gameObject.AddComponent<IsometricSorter>();
+
+        // Prefab 上已经挂了 IsometricSorter 时不要再加一个（两个实例会互相覆盖 sortingOrder）
+        if (!TryGetComponent(out IsometricSorter sorter))
+        {
+            sorter = gameObject.AddComponent<IsometricSorter>();
+        }
         sorter.Initialize(false, 100f, 10);
     }
 

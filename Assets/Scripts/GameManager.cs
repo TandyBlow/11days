@@ -76,17 +76,24 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            UnlockManager.Instance.ResetUnlocks();
-            day = 1;
-            money = 100;
-            goods = 50;
-            population = 0;
-            if (initialLayout != null)
-            {
-                BuildManager.Instance.LoadLayout(initialLayout);
-            }
-            StartNewDay();
+            StartNewGame();
         }
+    }
+
+    // 新游戏的唯一入口：Start() 与“读档失败”的回退都走这里，
+    // 避免出现 day/money/population 没重置、解锁状态没清空的半初始化对局。
+    private void StartNewGame()
+    {
+        UnlockManager.Instance.ResetUnlocks();
+        day = 1;
+        money = 100;
+        goods = 50;
+        population = 0;
+        if (initialLayout != null)
+        {
+            BuildManager.Instance.LoadLayout(initialLayout);
+        }
+        StartNewDay();
     }
 
     private void Update()
@@ -205,8 +212,8 @@ public class GameManager : MonoBehaviour
         SaveData data = SaveManager.LoadGame();
         if (data == null)
         {
-            Debug.LogError("加载失败: 找不到存档文件！");
-            StartNewDay();
+            Debug.LogError("加载失败: 找不到或无法解析存档文件，改为开新游戏。");
+            StartNewGame();
             return;
         }
         this.day = data.day;
@@ -220,14 +227,29 @@ public class GameManager : MonoBehaviour
 
     public void RequestEnterBuildMode(BuildingData buildingToBuild)
     {
-        if (CurrentState == GameState.Building) return;
+        if (buildingToBuild == null) return;
+
         if (buildingToBuild.isSpecialReplacement)
         {
+            // 特殊替换不是“进入建造模式”，而是直接替换场上已有的建筑
+            if (CurrentState == GameState.Building)
+            {
+                RequestEnterNormalMode();
+            }
             BuildManager.Instance.TrySpecialReplacement(buildingToBuild);
+            return;
+        }
+
+        RequestedBuilding = buildingToBuild;
+
+        if (CurrentState == GameState.Building)
+        {
+            // 已经处于建造模式时状态不会变化，OnGameStateChanged 不会触发，
+            // 必须直接通知 BuildManager 换选建筑，否则再点另一个建筑没反应。
+            BuildManager.Instance.SetSelectedBuilding(buildingToBuild);
         }
         else
         {
-            RequestedBuilding = buildingToBuild;
             UpdateGameState(GameState.Building);
         }
     }
@@ -241,20 +263,40 @@ public class GameManager : MonoBehaviour
     {
         money += amount;
         if (money < 0) money = 0;
-        uiManager.UpdateAllDisplays(money, goods);
+        if (uiManager != null) uiManager.UpdateAllDisplays(money, goods);
     }
 
     public void AddGoods(int amount)
     {
         goods += amount;
         if (goods < 0) goods = 0;
-        uiManager.UpdateAllDisplays(money, goods);
+        if (uiManager != null) uiManager.UpdateAllDisplays(money, goods);
     }
     
     public void AddPopulation(int amount)
     {
         population += amount;
         if (population < 0) population = 0;
+    }
+
+    // 人口由场上的住宅建筑推导，而不是在加载时累加。
+    // 否则每次读档都会把住宅人口重新加一遍（存档里已经有一份），人口会不断翻倍。
+    public void RecalculatePopulation()
+    {
+        int total = 0;
+        GridSystem grid = BuildManager.Instance != null ? BuildManager.Instance.GetGrid() : null;
+        if (grid != null)
+        {
+            foreach (PlacedObject placedObject in grid.GetAllPlacedObjects())
+            {
+                BuildingData data = placedObject.GetBuildingData();
+                if (data != null && data.buildingType == BuildingType.Residential)
+                {
+                    total += data.population;
+                }
+            }
+        }
+        population = total;
     }
 
     private void UpdateGameState(GameState newState)

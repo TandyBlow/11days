@@ -9,14 +9,13 @@ public class MainMenuUI : MonoBehaviour
     [SerializeField] private Button continueButton;
     // [SerializeField] private TextMeshProUGUI continueButtonText;
     [SerializeField] private Button newGameButton;
-    [SerializeField] private string gameSceneName = "GameScene"; // 你的主游戏场景名
+    [SerializeField] private string gameSceneName = "SampleScene"; // 真正的游戏场景（旧值 GameScene 已不在 Build Settings 里）
 
     private void Start()
     {
         // 检查是否存在存档
         if (SaveManager.HasSaveData())
         {
-            SaveData data = SaveManager.LoadGame();
             continueButton.interactable = true;
             // continueButtonText.text = $"从第 {data.day} 日继续";
         }
