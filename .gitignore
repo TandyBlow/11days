@@ -46,3 +46,13 @@ sysinfo.txt
 
 # Crashlytics generated file
 crashlytics-build.properties
+
+# Unity 本机编辑器状态（布局、搜索历史、最近场景等），不入库
+/UserSettings/
+
+# 本机 Locus 工具（本地开发辅助，缺失不影响项目编译与构建）
+/Packages/com.farlocus.locus/
+/Locus/agent/
+/Locus/workspace-trees/
+/Locus/knowledge/memory/
+*.locus-meta
