@@ -52,6 +52,7 @@ crashlytics-build.properties
 
 # 本机 Locus 工具（本地开发辅助，缺失不影响项目编译与构建）
 /Packages/com.farlocus.locus/
+/Directory.Build.props
 /Locus/agent/
 /Locus/workspace-trees/
 /Locus/knowledge/memory/
